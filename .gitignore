@@ -1,0 +1,6 @@
+# Ignorar arquivos temporários do SQLite e sistema
+*.db-wal
+*.db-shm
+.DS_Store
+__pycache__/
+*.pyc
