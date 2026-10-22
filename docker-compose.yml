@@ -1,0 +1,13 @@
+services:
+  servicedesk:
+    build: .
+    container_name: servicedesk-pro
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dados-sqlite:/data
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - DB_PATH=/data/database.db
