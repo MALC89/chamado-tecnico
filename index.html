@@ -1,0 +1,1750 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ServiceDesk Pro — Gestão de Chamados & SLA (Contrato Fixo)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="min-h-screen flex flex-col md:flex-row bg-slate-50 text-slate-800">
+
+  <!-- ==========================================
+       TELA DE LOGIN CORPORATIVA (COM LOGO DA SUA EMPRESA)
+       ========================================== -->
+  <div id="login-screen" class="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center p-4">
+    <!-- Efeito visual de fundo sutil -->
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-950/60 via-slate-950 to-slate-950 pointer-events-none"></div>
+
+    <div class="relative max-w-md w-full bg-white rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden">
+      <!-- Cabeçalho com a Logo da Sua Empresa -->
+      <div class="px-8 pt-8 pb-6 bg-slate-900 text-white text-center border-b border-slate-800">
+        <!-- Container da Logo Customizada -->
+        <div class="mb-4 flex items-center justify-center">
+          <img
+            id="login-logo-img"
+            src=""
+            alt="Logo da Empresa"
+            class="hidden max-h-20 max-w-[220px] object-contain rounded-lg mx-auto"
+          />
+          <div
+            id="login-logo-fallback"
+            class="w-16 h-16 rounded-2xl bg-indigo-600/90 border border-indigo-400/30 flex items-center justify-center text-white mx-auto shadow-lg shadow-indigo-600/30"
+          >
+            <i data-lucide="shield-check" class="w-8 h-8"></i>
+          </div>
+        </div>
+
+        <h1 id="login-company-name" class="text-xl font-bold tracking-tight text-white">ServiceDesk Pro</h1>
+        <p id="login-company-subtitle" class="text-xs text-slate-400 mt-1">Portal de Chamados Técnicos & Controle de SLA</p>
+
+        <div id="login-client-pill" class="hidden mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-[11px] text-indigo-300 font-medium">
+          <i data-lucide="building-2" class="w-3.5 h-3.5"></i>
+          <span id="login-client-pill-text"></span>
+        </div>
+      </div>
+
+      <!-- Formulário Limpo de Autenticação -->
+      <form onsubmit="handleLogin(event)" class="p-8 space-y-5">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1.5">E-mail ou Usuário</label>
+          <div class="relative">
+            <i data-lucide="user" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+            <input
+              type="text"
+              id="login-identifier"
+              required
+              autocomplete="username"
+              placeholder="Digite seu e-mail corporativo ou usuário"
+              class="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1.5">Senha</label>
+          <div class="relative">
+            <i data-lucide="lock" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+            <input
+              type="password"
+              id="login-password"
+              required
+              autocomplete="current-password"
+              placeholder="••••••••"
+              class="w-full pl-10 pr-10 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all"
+            />
+            <button
+              type="button"
+              onclick="toggleLoginPasswordVisibility()"
+              title="Mostrar/ocultar senha"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-xl shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+        >
+          <span>Acessar Portal</span>
+          <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </button>
+
+        <div class="pt-3 border-t border-slate-100 flex flex-col items-center gap-2">
+          <button
+            type="button"
+            onclick="handleResetAllPasswordsFromLogin()"
+            class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+          >
+            Esqueceu a senha? Resetar Senhas Padrão (Admin e Usuários)
+          </button>
+          <div id="login-support-footer" class="text-center text-[11px] text-slate-400">
+            Acesso restrito a colaboradores autorizados e equipe técnica.
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <aside class="w-full md:w-64 bg-slate-900 text-slate-100 flex flex-col justify-between shrink-0 no-print">
+    <div>
+      <!-- Logo / Header da Sua Empresa -->
+      <div class="p-5 border-b border-slate-800 flex items-center gap-3">
+        <img
+          id="sidebar-logo-img"
+          src=""
+          alt="Logo"
+          class="hidden w-10 h-10 rounded-xl object-contain bg-white p-1 shrink-0"
+        />
+        <div id="sidebar-logo-fallback" class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 shrink-0">
+          <i data-lucide="shield-check" class="w-6 h-6"></i>
+        </div>
+        <div class="min-w-0">
+          <h1 id="sidebar-company-name" class="font-bold text-base tracking-tight text-white leading-tight truncate">ServiceDesk Pro</h1>
+          <span class="text-xs text-indigo-400 font-medium block truncate" id="sidebar-role-badge">Contrato Fixo & SLA</span>
+        </div>
+      </div>
+
+      <!-- Card Resumo do Cliente Fixo -->
+      <div class="mx-4 my-4 p-3.5 rounded-xl bg-slate-800/80 border border-slate-700/70">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Cliente Dedicado</span>
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" id="sidebar-contract-status">Ativo</span>
+        </div>
+        <p class="font-semibold text-sm text-white truncate" id="sidebar-client-name">Não configurado</p>
+        <p class="text-xs text-slate-400 mt-0.5" id="sidebar-contract-number">Contrato: --</p>
+        <div class="mt-3 pt-2.5 border-t border-slate-700/70">
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-slate-400">Franquia Mensal</span>
+            <span class="text-slate-200 font-medium" id="sidebar-hours-summary">0h / 0h</span>
+          </div>
+          <div class="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+            <div id="sidebar-hours-bar" class="h-full bg-indigo-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Menu de Navegação -->
+      <nav class="px-3 space-y-1">
+        <button onclick="switchTab('tickets')" id="nav-tickets" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors bg-indigo-600 text-white cursor-pointer">
+          <span class="flex items-center gap-3">
+            <i data-lucide="ticket" class="w-4 h-4"></i>
+            <span id="nav-tickets-label">Chamados Técnicos</span>
+          </span>
+          <span id="badge-open-tickets" class="px-2 py-0.5 text-xs rounded-full bg-indigo-800 text-indigo-100 font-semibold">0</span>
+        </button>
+
+        <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
+          <span class="flex items-center gap-3">
+            <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+            <span id="nav-dashboard-label">Relatórios & SLA</span>
+          </span>
+        </button>
+
+        <button onclick="switchTab('solutions')" id="nav-solutions" class="nav-btn tech-or-admin-only w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
+          <span class="flex items-center gap-3">
+            <i data-lucide="book-open-check" class="w-4 h-4"></i>
+            <span>Banco de Soluções</span>
+          </span>
+          <span id="badge-solutions-count" class="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-300">0</span>
+        </button>
+
+        <button onclick="switchTab('users')" id="nav-users" class="nav-btn admin-only w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
+          <span class="flex items-center gap-3">
+            <i data-lucide="users" class="w-4 h-4"></i>
+            Usuários & Hierarquia
+          </span>
+          <span id="badge-users-count" class="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-300">0</span>
+        </button>
+
+        <button onclick="switchTab('problems')" id="nav-problems" class="nav-btn admin-only w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
+          <span class="flex items-center gap-3">
+            <i data-lucide="layers" class="w-4 h-4"></i>
+            Tipos de Problema & SLA
+          </span>
+        </button>
+
+        <button onclick="switchTab('settings')" id="nav-settings" class="nav-btn admin-only w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
+          <span class="flex items-center gap-3">
+            <i data-lucide="building-2" class="w-4 h-4"></i>
+            Clientes & Contratos
+          </span>
+          <span id="badge-clients-count" class="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-300">0</span>
+        </button>
+
+        <button onclick="switchTab('profile')" id="nav-profile" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
+          <span class="flex items-center gap-3">
+            <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+            <span>Configurações & Perfil</span>
+          </span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Rodapé Sidebar: Usuário Logado (com Foto de Perfil) + Status do Banco -->
+    <div class="p-4 border-t border-slate-800 text-xs text-slate-400 space-y-3">
+      <div class="p-2.5 rounded-lg bg-slate-800/90 border border-slate-700 flex items-center justify-between gap-2">
+        <div onclick="switchTab('profile')" title="Clique para alterar foto, senha ou cor do sistema" class="flex items-center gap-2.5 min-w-0 cursor-pointer group">
+          <img
+            id="logged-user-avatar-img"
+            src=""
+            alt="Foto Perfil"
+            class="hidden w-9 h-9 rounded-full object-cover border-2 border-indigo-400 shrink-0"
+          />
+          <div
+            id="logged-user-avatar-fallback"
+            class="w-9 h-9 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 border border-indigo-400/40"
+          >
+            US
+          </div>
+          <div class="truncate">
+            <p id="logged-user-name" class="font-semibold text-white text-xs truncate group-hover:text-indigo-300 transition-colors">Usuário</p>
+            <p id="logged-user-role" class="text-[11px] text-indigo-400 truncate">Perfil</p>
+          </div>
+        </div>
+        <button onclick="handleLogout()" title="Sair / Trocar Usuário" class="px-2.5 py-1 rounded bg-slate-700 hover:bg-rose-600 text-white text-[11px] font-semibold transition-colors shrink-0 cursor-pointer">
+          Sair
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between">
+        <span class="flex items-center gap-1.5">
+          <span id="cloud-status-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span id="cloud-status-label">Banco SQLite Ativo</span>
+        </span>
+        <button onclick="resetDatabaseConfirm()" id="btn-reset-db" class="admin-only text-rose-400 hover:text-rose-300 underline cursor-pointer">
+          Zerar Tudo
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CONTEÚDO PRINCIPAL -->
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+    <!-- TOPBAR -->
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20 no-print">
+      <div>
+        <div class="flex items-center gap-2">
+          <h2 id="page-title" class="text-xl font-bold text-slate-900">Central de Chamados Técnicos</h2>
+          <span class="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+            <i data-lucide="building-2" class="w-3.5 h-3.5"></i>
+            <span id="header-client-badge">Configure o Cliente</span>
+          </span>
+        </div>
+        <p id="page-subtitle" class="text-xs text-slate-500 mt-0.5">Gerencie solicitações, controle o cronômetro de SLA e acompanhe os clientes de contrato fixo</p>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <!-- Indicador rápido de SLAs críticos -->
+        <div id="urgent-sla-banner" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-600"></i>
+          <span id="urgent-sla-text">0 chamados com SLA crítico</span>
+        </div>
+
+        <button onclick="switchTab('profile')" title="Mudar cor, senha e foto de perfil" class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-all cursor-pointer">
+          <i data-lucide="palette" class="w-4 h-4 text-indigo-600"></i>
+          <span class="hidden md:inline">Cor & Perfil</span>
+        </button>
+
+        <button onclick="openNewTicketModal()" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm shadow-sm shadow-indigo-600/20 transition-all cursor-pointer">
+          <i data-lucide="plus-circle" class="w-4 h-4"></i>
+          Abrir Novo Chamado
+        </button>
+      </div>
+    </header>
+
+    <div class="p-6 max-w-7xl w-full mx-auto space-y-6">
+
+      <!-- ==========================================
+           ABA 1: CHAMADOS TÉCNICOS
+           ========================================== -->
+      <section id="tab-tickets" class="tab-section active space-y-5">
+
+        <!-- Guia Rápido de Primeiro Uso (Exibido quando o banco está zerado e Admin logado) -->
+        <div id="onboarding-banner" class="hidden bg-indigo-950 text-white p-5 rounded-2xl border border-indigo-800 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="space-y-1">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-800 text-indigo-200">
+                Banco de Dados Zerado — Pronto para Cadastro Inicial
+              </span>
+              <h3 class="text-base font-bold">Configure seus Clientes de Contrato Fixo em 3 passos simples:</h3>
+              <p class="text-xs text-indigo-200">Os dados são salvos diretamente no banco de dados SQLite (<code class="font-mono">database.db</code>).</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="switchTab('settings')" class="px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/15 cursor-pointer">
+                1. Cadastrar Clientes de Contrato
+              </button>
+              <button onclick="switchTab('problems')" class="px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/15 cursor-pointer">
+                2. Cadastrar Problemas & SLA
+              </button>
+              <button onclick="switchTab('users')" class="px-3.5 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold cursor-pointer">
+                3. Cadastrar Usuários & Senhas
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Faixa de Triagem do Administrador: Chamados Aguardando Direcionamento ou Atendimento do Admin -->
+        <div id="admin-triage-banner" class="hidden bg-amber-50 border border-amber-300 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+              <i data-lucide="git-fork" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-amber-950" id="admin-triage-title">0 chamado(s) aguardando direcionamento do Administrador</h4>
+              <p class="text-xs text-amber-800">Novos chamados chegam primeiro para você: escolha direcionar para um Técnico ou atender você mesmo.</p>
+            </div>
+          </div>
+          <button onclick="filterTriageTickets()" class="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors cursor-pointer">
+            Filtrar Pendentes de Direcionamento
+          </button>
+        </div>
+
+        <!-- Cards de Resumo Rápido -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Chamados em Aberto</p>
+              <p class="text-2xl font-bold text-slate-900 mt-1" id="kpi-open-count">0</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Aguardando ou em atendimento</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <i data-lucide="inbox" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">SLA No Prazo / Atenção</p>
+              <p class="text-2xl font-bold text-emerald-600 mt-1" id="kpi-ontime-count">0</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Dentro do limite contratual</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <i data-lucide="clock" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">SLA Estourado (Atrasados)</p>
+              <p class="text-2xl font-bold text-rose-600 mt-1" id="kpi-expired-count">0</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Exigem ação imediata</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+              <i data-lucide="flame" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Concluídos no Contrato</p>
+              <p class="text-2xl font-bold text-slate-900 mt-1" id="kpi-resolved-count">0</p>
+              <p class="text-[11px] text-emerald-600 font-medium mt-0.5" id="kpi-sla-compliance">100% dentro do SLA</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+              <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Barra de Filtros e Pesquisa -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div class="relative flex-1 min-w-[240px]">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+            <input
+              type="text"
+              id="filter-search"
+              oninput="renderTickets()"
+              placeholder="Buscar por protocolo (#CH), título, cliente, solicitante ou técnico..."
+              class="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2.5">
+            <select id="filter-client" onchange="renderTickets()" class="admin-only text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="ALL">Todos os Clientes de Contrato</option>
+            </select>
+
+            <select id="filter-status" onchange="renderTickets()" class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="ALL">Todos os Status</option>
+              <option value="TRIAGE">Aguardando Direcionamento (Admin)</option>
+              <option value="OPEN_ONLY">Pendentes (Abertos + Atendimento)</option>
+              <option value="Aberto">Status: Aberto</option>
+              <option value="Em Atendimento">Status: Em Atendimento</option>
+              <option value="Aguardando Cliente">Status: Aguardando Cliente</option>
+              <option value="Resolvido">Status: Resolvido</option>
+            </select>
+
+            <select id="filter-sla" onchange="renderTickets()" class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="ALL">Qualquer Situação SLA</option>
+              <option value="EXPIRED">SLA Estourado / Atrasado</option>
+              <option value="WARNING">SLA Próximo do Vencimento</option>
+              <option value="OK">SLA No Prazo</option>
+            </select>
+
+            <select id="filter-user" onchange="renderTickets()" class="admin-only text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="ALL">Todos os Usuários</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Tabela / Lista de Chamados -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <th class="py-3.5 px-4">Chamado</th>
+                  <th class="py-3.5 px-4">Solicitante / Empresa Cliente</th>
+                  <th class="py-3.5 px-4">Tipo de Problema</th>
+                  <th class="py-3.5 px-4">Cronômetro SLA</th>
+                  <th class="py-3.5 px-4">Status</th>
+                  <th class="py-3.5 px-4 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="tickets-table-body" class="divide-y divide-slate-200 text-sm">
+                <!-- Preenchido via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==========================================
+           ABA 2: RELATÓRIOS & DASHBOARD (ESCOPO POR HIERARQUIA E CLIENTE)
+           ========================================== -->
+      <section id="tab-dashboard" class="tab-section space-y-6">
+        <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs print-card flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="report-scope-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-800">
+                Relatório Global (Visão Admin)
+              </span>
+            </div>
+            <h3 class="text-xl font-bold text-slate-900 mt-1" id="report-client-title">Cliente não configurado</h3>
+            <p class="text-xs text-slate-500 mt-0.5" id="report-contract-subtitle">Configure os clientes de contrato na aba Clientes & Contratos</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2.5 no-print">
+            <select id="dash-filter-client" onchange="renderDashboard()" class="admin-only text-xs font-semibold border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="ALL">Visão Consolidada (Todos os Clientes)</option>
+            </select>
+            <button onclick="exportTicketsCSV()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+              <i data-lucide="download" class="w-4 h-4 text-slate-500"></i>
+              <span id="btn-export-csv-label">Exportar Planilha (CSV)</span>
+            </button>
+            <button onclick="window.print()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors cursor-pointer">
+              <i data-lucide="printer" class="w-4 h-4"></i>
+              Imprimir / Salvar PDF
+            </button>
+          </div>
+        </div>
+
+        <!-- Métricas de Contrato Fixo & SLA -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs print-card">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase text-slate-400" id="dash-card1-title">Taxa de Cumprimento SLA</span>
+              <i data-lucide="award" class="w-5 h-5 text-indigo-600"></i>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+              <span id="dash-sla-rate" class="text-3xl font-bold text-slate-900">100%</span>
+              <span id="dash-sla-target-badge" class="text-xs font-medium text-emerald-600">Meta: 95%</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-2" id="dash-card1-desc">Percentual de chamados atendidos dentro do prazo de SLA acordado.</p>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs print-card">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase text-slate-400" id="dash-card2-title">Consumo de Horas do Contrato</span>
+              <i data-lucide="timer" class="w-5 h-5 text-indigo-600"></i>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+              <span id="dash-hours-used" class="text-3xl font-bold text-slate-900">0h</span>
+              <span id="dash-hours-quota" class="text-xs font-medium text-slate-500">de 0h mensais</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-2" id="dash-hours-remaining">Configure a franquia mensal na aba do contrato.</p>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs print-card">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold uppercase text-slate-400">Tempo Médio de Resolução</span>
+              <i data-lucide="zap" class="w-5 h-5 text-indigo-600"></i>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+              <span id="dash-avg-resolution" class="text-3xl font-bold text-slate-900">--</span>
+              <span class="text-xs font-medium text-slate-500">horas por chamado</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-2">Calculado com base nos chamados encerrados neste escopo.</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs print-card">
+            <h4 class="font-bold text-sm text-slate-900 mb-4 flex items-center gap-2">
+              <i data-lucide="pie-chart" class="w-4 h-4 text-indigo-600"></i>
+              <span id="dash-panel1-title">Volume por Tipo de Problema & SLA</span>
+            </h4>
+            <div id="dash-problems-breakdown" class="space-y-3.5"></div>
+          </div>
+
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs print-card">
+            <h4 class="font-bold text-sm text-slate-900 mb-4 flex items-center gap-2">
+              <i data-lucide="user-check" class="w-4 h-4 text-indigo-600"></i>
+              <span id="dash-panel2-title">Chamados por Usuário / Setor do Cliente</span>
+            </h4>
+            <div id="dash-users-breakdown" class="space-y-3.5"></div>
+          </div>
+        </div>
+
+        <!-- Painel Exclusivo Admin / Técnico: Produtividade por Técnico -->
+        <div id="dash-tech-section" class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs print-card">
+          <h4 class="font-bold text-sm text-slate-900 mb-4 flex items-center gap-2">
+            <i data-lucide="wrench" class="w-4 h-4 text-indigo-600"></i>
+            <span id="dash-panel3-title">Produtividade & Cumprimento de SLA por Técnico</span>
+          </h4>
+          <div id="dash-techs-breakdown" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+        </div>
+      </section>
+
+      <!-- ==========================================
+           ABA 3: CADASTRO DE USUÁRIOS & HIERARQUIA DE ACESSO
+           ========================================== -->
+      <section id="tab-users" class="tab-section space-y-6">
+
+        <!-- Matriz Explicativa de Hierarquia de Perfis -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-white p-4 rounded-xl border border-purple-200 shadow-xs">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800">1. Administrador (Admin)</span>
+              <i data-lucide="shield" class="w-4 h-4 text-purple-600"></i>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              <strong>Acesso Total:</strong> Visualiza e edita todos os chamados, gerencia o contrato fixo, cadastra usuários/SLAs e acessa o <strong>Relatório Global de Todo o Contrato</strong> (horas totais, todos os clientes e técnicos).
+            </p>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-sky-200 shadow-xs">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-100 text-sky-800">2. Técnico de Suporte</span>
+              <i data-lucide="wrench" class="w-4 h-4 text-sky-600"></i>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              <strong>Fila Operacional:</strong> Visualiza os chamados atribuídos a ele e os chamados na fila sem técnico, altera status, aponta horas trabalhadas e acessa o <strong>Relatório Técnico de Seus Atendimentos & SLA</strong>.
+            </p>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-emerald-200 shadow-xs">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">3. Usuário Comum (Solicitante)</span>
+              <i data-lucide="user" class="w-4 h-4 text-emerald-600"></i>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              <strong>Portal do Cliente:</strong> Abre novos chamados (com SLA automático), acompanha <strong>apenas os chamados que ele mesmo abriu</strong> e acessa o <strong>Relatório Individual dos Seus Chamados</strong>.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Formulário de Cadastro / Edição de Usuário com Hierarquia e Bloqueio -->
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs h-fit">
+            <div class="flex items-center justify-between mb-1">
+              <h3 class="font-bold text-base text-slate-900 flex items-center gap-2" id="user-form-title">
+                <i data-lucide="user-plus" class="w-4 h-4 text-indigo-600"></i>
+                <span>Cadastrar Usuário & Perfil</span>
+              </h3>
+              <button type="button" id="btn-cancel-user-edit" onclick="cancelEditUser()" class="hidden text-xs font-semibold text-rose-600 hover:underline cursor-pointer">
+                Cancelar Edição
+              </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-4" id="user-form-subtitle">Defina os dados, foto, status e o nível de hierarquia no sistema.</p>
+
+            <form id="form-new-user" onsubmit="handleCreateUser(event)" class="space-y-3.5">
+              <input type="hidden" id="edit-user-id" value="" />
+
+              <!-- Foto do Usuário no Cadastro/Edição -->
+              <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                  <img id="user-form-avatar-preview" src="" alt="Foto" class="hidden w-11 h-11 rounded-full object-cover border border-indigo-300" />
+                  <div id="user-form-avatar-fallback" class="w-11 h-11 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center">
+                    <i data-lucide="camera" class="w-4 h-4"></i>
+                  </div>
+                  <div>
+                    <p class="text-xs font-semibold text-slate-800">Foto do Perfil</p>
+                    <p class="text-[11px] text-slate-400">Opcional (PNG/JPG)</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <label class="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold cursor-pointer">
+                    Foto
+                    <input type="file" id="user-avatar-file" accept="image/*" onchange="handleAdminUserAvatarSelected(event)" class="hidden" />
+                  </label>
+                  <button type="button" onclick="clearAdminUserAvatar()" class="px-2 py-1.5 rounded-lg text-slate-400 hover:text-rose-600 text-xs cursor-pointer" title="Remover foto">
+                    Limpar
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Usuário (Hierarquia) *</label>
+                <select id="user-access-role" required onchange="onUserRoleSelectChange()" class="w-full px-3 py-2.5 text-sm font-semibold border border-indigo-300 bg-indigo-50/50 text-indigo-950 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="USER" selected>Usuário Comum (Solicitante do Cliente)</option>
+                  <option value="TECH">Técnico de Suporte (Atendimento & Fila)</option>
+                  <option value="ADMIN">Administrador (Acesso e Relatório Total)</option>
+                </select>
+                <p id="user-role-helper" class="text-[11px] text-indigo-700 mt-1">
+                  Vê apenas seus próprios chamados e seu relatório individual.
+                </p>
+              </div>
+
+              <div class="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200">
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                    <i data-lucide="briefcase" class="w-3.5 h-3.5 text-indigo-600"></i>
+                    Contrato / Empresa Cliente que Faz Parte *
+                  </label>
+                  <button type="button" onclick="switchTab('settings')" class="text-[11px] font-semibold text-indigo-600 hover:underline cursor-pointer">
+                    + Novo Contrato
+                  </button>
+                </div>
+                <select id="user-client-id" onchange="onUserContractSelectChange()" class="w-full px-3 py-2 text-sm font-medium border border-indigo-300 bg-white text-slate-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="">Sem vínculo específico / Equipe Técnica Interna</option>
+                </select>
+                <p id="user-contract-helper" class="text-[11px] text-indigo-800 mt-1.5 font-medium">
+                  Selecione de qual contrato fixo este usuário faz parte para vincular seus chamados e franquia de horas.
+                </p>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nome Completo *</label>
+                <input type="text" id="user-name" required placeholder="Ex: Ana Paula Souza" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Setor / Departamento *</label>
+                <input type="text" id="user-dept" required placeholder="Ex: Financeiro, Suporte N2, Diretoria" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Cargo / Função</label>
+                <input type="text" id="user-role" placeholder="Ex: Analista Fiscal / Técnico Redes" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">E-mail de Login *</label>
+                <input type="email" id="user-email" required placeholder="email@empresa.com.br" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Senha Inicial / Temporária *</label>
+                <input type="text" id="user-password" required value="123456" placeholder="Senha para 1º acesso" class="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Telefone / WhatsApp</label>
+                <input type="text" id="user-phone" placeholder="(11) 99999-0000" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+
+              <div class="pt-1 space-y-2">
+                <label class="inline-flex items-center gap-2 cursor-pointer block p-2 rounded-lg bg-amber-50/80 border border-amber-200">
+                  <input type="checkbox" id="user-must-change-pwd" checked class="rounded border-amber-400 text-amber-600 focus:ring-amber-500" />
+                  <span class="text-xs font-semibold text-amber-900">Exigir Troca de Senha Obrigatória no 1º Acesso</span>
+                </label>
+
+                <label class="inline-flex items-center gap-2 cursor-pointer block">
+                  <input type="checkbox" id="user-vip" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                  <span class="text-xs font-medium text-slate-700">Usuário VIP / Diretoria (Prioridade de SLA)</span>
+                </label>
+
+                <label class="inline-flex items-center gap-2 cursor-pointer block">
+                  <input type="checkbox" id="user-blocked" class="rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
+                  <span class="text-xs font-medium text-rose-700">Bloquear Acesso deste Usuário ao Sistema</span>
+                </label>
+              </div>
+
+              <button type="submit" id="btn-submit-user" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg shadow-xs transition-colors cursor-pointer">
+                Salvar Usuário no Banco
+              </button>
+            </form>
+          </div>
+
+          <!-- Lista de Usuários Cadastrados (Com Edição, Desbloqueio de Senha, Bloqueio e Exclusão) -->
+          <div class="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+            <div class="p-4 border-b border-slate-200 flex items-center justify-between">
+              <h4 class="font-bold text-sm text-slate-900">Usuários Cadastrados (Editar, Desbloquear Senha, Bloquear Acesso & Excluir)</h4>
+              <span class="text-xs text-slate-500" id="users-table-subtitle">0 usuários cadastrados</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase text-slate-500">
+                    <th class="py-3 px-4">Usuário / Contrato que Faz Parte</th>
+                    <th class="py-3 px-4">Hierarquia & Status</th>
+                    <th class="py-3 px-4">Login & Situação da Senha</th>
+                    <th class="py-3 px-4 text-center">Chamados</th>
+                    <th class="py-3 px-4 text-right">Ações do Administrador</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-body" class="divide-y divide-slate-200 text-sm">
+                  <!-- Preenchido via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==========================================
+           ABA 4: CATÁLOGO DE PROBLEMAS & SLA
+           ========================================== -->
+      <section id="tab-problems" class="tab-section space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Novo Tipo de Problema + SLA -->
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs h-fit">
+            <h3 class="font-bold text-base text-slate-900 flex items-center gap-2 mb-1">
+              <i data-lucide="sliders" class="w-4 h-4 text-indigo-600"></i>
+              Novo Tipo de Problema & SLA
+            </h3>
+            <p class="text-xs text-slate-500 mb-4">Defina os tempos máximos de atendimento (SLA) conforme cláusulas do contrato fixo.</p>
+
+            <form id="form-new-problem" onsubmit="handleCreateProblem(event)" class="space-y-3.5">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nome do Tipo de Problema *</label>
+                <input type="text" id="prob-name" required placeholder="Ex: Servidor Indisponível, Falha de Rede" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Categoria Técnica *</label>
+                <input type="text" id="prob-category" required placeholder="Ex: Infraestrutura, Hardware, Sistema" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">SLA Padrão (Horas) *</label>
+                  <input type="number" id="prob-sla" required min="0.5" step="0.5" value="4" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Prioridade *</label>
+                  <select id="prob-priority" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="Crítica">Crítica</option>
+                    <option value="Alta">Alta</option>
+                    <option value="Média" selected>Média</option>
+                    <option value="Baixa">Baixa</option>
+                    <option value="Planejada">Planejada</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Descrição / Escopo do Atendimento</label>
+                <textarea id="prob-desc" rows="3" placeholder="Critérios de atendimento para este tipo de chamado..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+              </div>
+
+              <button type="submit" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg shadow-xs transition-colors cursor-pointer">
+                Salvar no Catálogo SLA
+              </button>
+            </form>
+          </div>
+
+          <!-- Lista de Tipos de Problema -->
+          <div class="lg:col-span-2 space-y-3" id="problems-list-container">
+            <!-- Preenchido via JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ==========================================
+           ABA 5: MÚLTIPLOS CLIENTES DE CONTRATO FIXO, LOGO DA EMPRESA & BANCO SQL
+           ========================================== -->
+      <section id="tab-settings" class="tab-section space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Cadastro / Edição de Múltiplos Clientes de Contrato Fixo -->
+          <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
+            <div class="flex items-center justify-between mb-1">
+              <h3 class="font-bold text-base text-slate-900 flex items-center gap-2" id="client-form-title">
+                <i data-lucide="building-2" class="w-4 h-4 text-indigo-600"></i>
+                <span>Cadastrar Cliente de Contrato Fixo</span>
+              </h3>
+              <button type="button" id="btn-cancel-client-edit" onclick="cancelEditClient()" class="hidden text-xs font-semibold text-rose-600 hover:underline cursor-pointer">
+                Cancelar Edição
+              </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-4">Cadastre um ou mais clientes de contrato fixo, com suas franquias de horas e metas de SLA individuais.</p>
+
+            <form id="form-client-contract" onsubmit="handleSaveContract(event)" class="space-y-3.5">
+              <input type="hidden" id="edit-client-id" value="" />
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Razão Social / Nome da Empresa Cliente *</label>
+                <input type="text" id="cfg-client-name" required placeholder="Ex: Indústria Metalúrgica Alfa Ltda" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">CNPJ</label>
+                  <input type="text" id="cfg-client-cnpj" placeholder="00.000.000/0001-00" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Nº do Contrato</label>
+                  <input type="text" id="cfg-contract-num" placeholder="Ex: CT-2026-001" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Franquia Mensal (Horas) *</label>
+                  <input type="number" id="cfg-hours-quota" min="0" step="1" required placeholder="Ex: 40" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Meta de SLA Contratual (%)</label>
+                  <input type="number" id="cfg-sla-target" min="1" max="100" required value="95" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Gestor Responsável no Cliente</label>
+                  <input type="text" id="cfg-manager" placeholder="Nome do contato principal" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Telefone / Contato do Cliente</label>
+                  <input type="text" id="cfg-client-phone" placeholder="(11) 3000-0000" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Status do Contrato</label>
+                  <select id="cfg-client-status" class="w-full px-3 py-2 text-sm border border-slate-300 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="Ativo" selected>Contrato Ativo</option>
+                    <option value="Suspenso">Suspenso / Em Renovação</option>
+                    <option value="Encerrado">Encerrado</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Alterar Senha Admin (opcional)</label>
+                  <input type="password" id="cfg-admin-pass" placeholder="Manter atual" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+
+              <button type="submit" id="btn-submit-client" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg transition-colors cursor-pointer">
+                Adicionar Cliente de Contrato no Banco
+              </button>
+            </form>
+          </div>
+
+          <!-- Identidade Visual & Logo da Sua Empresa (Tela de Login e Sistema) -->
+          <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
+            <h3 class="font-bold text-base text-slate-900 flex items-center gap-2 mb-1">
+              <i data-lucide="image" class="w-4 h-4 text-indigo-600"></i>
+              Identidade Visual & Logo da Sua Empresa
+            </h3>
+            <p class="text-xs text-slate-500 mb-4">Personalize a logo e o nome exibidos na tela de login e no topo do sistema.</p>
+
+            <form onsubmit="handleSaveBranding(event)" class="space-y-4">
+              <!-- Preview e Upload da Logo -->
+              <div class="p-4 rounded-xl bg-slate-900 text-white flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-3.5">
+                  <img
+                    id="cfg-logo-preview"
+                    src=""
+                    alt="Preview Logo"
+                    class="hidden h-14 max-w-[160px] object-contain rounded-lg bg-white p-1.5"
+                  />
+                  <div
+                    id="cfg-logo-fallback"
+                    class="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center text-white"
+                  >
+                    <i data-lucide="shield-check" class="w-6 h-6"></i>
+                  </div>
+                  <div>
+                    <p class="text-xs font-semibold text-white">Logo da Tela de Login</p>
+                    <p class="text-[11px] text-slate-400">Formatos aceitos: PNG, JPG, SVG ou WebP</p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <label class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer transition-colors">
+                    Escolher Arquivo
+                    <input type="file" id="cfg-logo-file" accept="image/*" onchange="handleLogoFileSelected(event)" class="hidden" />
+                  </label>
+                  <button
+                    type="button"
+                    onclick="clearCompanyLogo()"
+                    class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    Remover
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Ou cole a URL da Logo (opcional)</label>
+                <input
+                  type="text"
+                  id="cfg-company-logo-url"
+                  oninput="onLogoUrlInput()"
+                  placeholder="https://suaempresa.com.br/logo.png"
+                  class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nome da Sua Empresa de TI / Suporte *</label>
+                <input
+                  type="text"
+                  id="cfg-company-name"
+                  required
+                  placeholder="Ex: TechSolutions Suporte Corporativo"
+                  class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Subtítulo da Tela de Login</label>
+                <input
+                  type="text"
+                  id="cfg-login-subtitle"
+                  placeholder="Ex: Central de Atendimento ao Cliente & SLA"
+                  class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Rodapé de Contato / Suporte na Tela de Login</label>
+                <input
+                  type="text"
+                  id="cfg-support-contact"
+                  placeholder="Ex: Plantão 24h: (11) 4000-1234 • suporte@suaempresa.com.br"
+                  class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <button type="submit" class="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-lg transition-colors cursor-pointer">
+                Salvar Logo e Identidade Visual
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Lista de Todos os Clientes de Contrato Fixo Cadastrados -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+                <i data-lucide="briefcase" class="w-4 h-4 text-indigo-600"></i>
+                Empresas Clientes de Contrato Fixo Cadastradas
+              </h4>
+              <p class="text-xs text-slate-500">Gerencie múltiplos contratos, acompanhe a franquia individual de horas de cada cliente, edite ou exclua.</p>
+            </div>
+            <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200" id="clients-table-subtitle">
+              0 clientes cadastrados
+            </span>
+          </div>
+          <div id="clients-list-container" class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Preenchido via JS -->
+          </div>
+        </div>
+
+        <!-- Status do Banco de Dados SQLite + Exportação SQL Cloud -->
+        <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+              <i data-lucide="hard-drive" class="w-4 h-4 text-indigo-600"></i>
+              Banco de Dados Relacional Ativo (<code class="font-mono text-indigo-600">database.db</code>)
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">Tabelas sincronizadas: <code class="font-mono">contract, clients, users, problem_types, tickets</code></p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" onclick="copySqlSchema()" class="px-3.5 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-lg transition-colors cursor-pointer">
+              Copiar Schema SQL (PostgreSQL / Supabase)
+            </button>
+            <button type="button" onclick="resetDatabaseConfirm()" class="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-xs rounded-lg transition-colors cursor-pointer">
+              Zerar Todo o Banco de Dados
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==========================================
+           ABA 6: CONFIGURAÇÕES & MEU PERFIL (COR, SENHA E FOTO DE PERFIL)
+           ========================================== -->
+      <section id="tab-profile" class="tab-section space-y-6">
+        <!-- Banner de Troca de Senha Obrigatória no Primeiro Acesso -->
+        <div id="first-login-password-banner" class="hidden p-5 rounded-2xl bg-amber-50 border-2 border-amber-400 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-start gap-3.5">
+            <div class="w-11 h-11 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <i data-lucide="key-round" class="w-6 h-6"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-200 text-amber-950">Primeiro Acesso / Senha Resetada</span>
+                <h4 class="font-bold text-sm text-amber-950">Troca de Senha Obrigatória para Continuar</h4>
+              </div>
+              <p class="text-xs text-amber-900 mt-1">
+                Por segurança, como este é o seu <strong>primeiro acesso</strong> (ou sua senha foi desbloqueada/redefinida pelo Administrador), cadastre uma <strong>nova senha pessoal</strong> no quadro <strong>"Segurança — Troca de Senha"</strong> abaixo para liberar todas as abas e abertura de chamados. Você também já pode enviar sua <strong>foto de perfil</strong>!
+              </p>
+            </div>
+          </div>
+          <button type="button" onclick="document.getElementById('pwd-current')?.focus()" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs cursor-pointer">
+            Ir para Troca de Senha
+          </button>
+        </div>
+
+        <!-- Seletor de Cores do Sistema (Mudar de Cor) -->
+        <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+                <i data-lucide="palette" class="w-4 h-4 text-indigo-600"></i>
+                Personalizar Cor do Sistema (Tema Visual)
+              </h3>
+              <p class="text-xs text-slate-500">Todos os usuários têm permissão para escolher a cor do seu portal, alterar foto de perfil e trocar a própria senha.</p>
+            </div>
+            <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200" id="current-theme-badge">
+              Tema Ativo: Índigo
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3" id="theme-color-grid">
+            <button type="button" onclick="handleSelectThemeColor('indigo')" data-color-btn="indigo" class="theme-color-btn p-3 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex flex-col items-center gap-2 transition-all cursor-pointer">
+              <span class="w-8 h-8 rounded-full bg-[#4f46e5] shadow-md"></span>
+              <span class="text-xs font-semibold text-slate-700">Índigo Padrão</span>
+            </button>
+
+            <button type="button" onclick="handleSelectThemeColor('blue')" data-color-btn="blue" class="theme-color-btn p-3 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex flex-col items-center gap-2 transition-all cursor-pointer">
+              <span class="w-8 h-8 rounded-full bg-[#0284c7] shadow-md"></span>
+              <span class="text-xs font-semibold text-slate-700">Azul Oceano</span>
+            </button>
+
+            <button type="button" onclick="handleSelectThemeColor('emerald')" data-color-btn="emerald" class="theme-color-btn p-3 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex flex-col items-center gap-2 transition-all cursor-pointer">
+              <span class="w-8 h-8 rounded-full bg-[#059669] shadow-md"></span>
+              <span class="text-xs font-semibold text-slate-700">Esmeralda</span>
+            </button>
+
+            <button type="button" onclick="handleSelectThemeColor('violet')" data-color-btn="violet" class="theme-color-btn p-3 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex flex-col items-center gap-2 transition-all cursor-pointer">
+              <span class="w-8 h-8 rounded-full bg-[#7c3aed] shadow-md"></span>
+              <span class="text-xs font-semibold text-slate-700">Roxo Real</span>
+            </button>
+
+            <button type="button" onclick="handleSelectThemeColor('rose')" data-color-btn="rose" class="theme-color-btn p-3 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex flex-col items-center gap-2 transition-all cursor-pointer">
+              <span class="w-8 h-8 rounded-full bg-[#e11d48] shadow-md"></span>
+              <span class="text-xs font-semibold text-slate-700">Rubi / Carmim</span>
+            </button>
+
+            <button type="button" onclick="handleSelectThemeColor('amber')" data-color-btn="amber" class="theme-color-btn p-3 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex flex-col items-center gap-2 transition-all cursor-pointer">
+              <span class="w-8 h-8 rounded-full bg-[#d97706] shadow-md"></span>
+              <span class="text-xs font-semibold text-slate-700">Laranja Âmbar</span>
+            </button>
+
+            <button type="button" onclick="handleSelectThemeColor('slate')" data-color-btn="slate" class="theme-color-btn p-3 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex flex-col items-center gap-2 transition-all cursor-pointer">
+              <span class="w-8 h-8 rounded-full bg-[#334155] shadow-md"></span>
+              <span class="text-xs font-semibold text-slate-700">Grafite Escuro</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Card 1: Foto do Perfil & Dados Pessoais -->
+          <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
+            <h3 class="font-bold text-base text-slate-900 flex items-center gap-2 mb-1">
+              <i data-lucide="camera" class="w-4 h-4 text-indigo-600"></i>
+              Foto do Perfil & Dados Pessoais
+            </h3>
+            <p class="text-xs text-slate-500 mb-4">Todos os perfis têm permissão para alterar a foto de perfil exibida no menu lateral e nos chamados.</p>
+
+            <form onsubmit="handleSaveMyProfilePhotoAndInfo(event)" class="space-y-4">
+              <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-4">
+                  <img
+                    id="profile-avatar-preview"
+                    src=""
+                    alt="Foto do Perfil"
+                    class="hidden w-16 h-16 rounded-full object-cover border-2 border-indigo-600 shadow-sm"
+                  />
+                  <div
+                    id="profile-avatar-fallback"
+                    class="w-16 h-16 rounded-full bg-indigo-600 text-white font-bold text-lg flex items-center justify-center shadow-sm"
+                  >
+                    US
+                  </div>
+                  <div>
+                    <p class="text-sm font-bold text-slate-900" id="profile-card-name">Usuário</p>
+                    <p class="text-xs text-slate-500" id="profile-card-email">email@empresa.com</p>
+                    <p class="text-[11px] font-semibold text-indigo-700 mt-0.5" id="profile-card-contract"></p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <label class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer transition-colors">
+                    Escolher Foto
+                    <input type="file" id="profile-avatar-file" accept="image/*" onchange="handleProfileAvatarSelected(event)" class="hidden" />
+                  </label>
+                  <button
+                    type="button"
+                    onclick="clearProfileAvatar()"
+                    class="px-3 py-2 rounded-lg border border-slate-300 hover:bg-rose-50 text-slate-600 hover:text-rose-600 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Remover Foto
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Ou cole a URL da Foto de Perfil (opcional)</label>
+                <input
+                  type="text"
+                  id="profile-avatar-url"
+                  oninput="onProfileAvatarUrlInput()"
+                  placeholder="https://exemplo.com/minha-foto.jpg"
+                  class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div id="profile-personal-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Seu Nome de Exibição</label>
+                  <input
+                    type="text"
+                    id="profile-name-input"
+                    placeholder="Seu nome completo"
+                    class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Telefone / WhatsApp</label>
+                  <input
+                    type="text"
+                    id="profile-phone-input"
+                    placeholder="(11) 99999-0000"
+                    class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <button type="submit" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg transition-colors cursor-pointer">
+                Salvar Foto e Dados do Perfil
+              </button>
+            </form>
+          </div>
+
+          <!-- Card 2: Troca de Senha -->
+          <div id="profile-password-card" class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs h-fit">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+                <i data-lucide="key-round" class="w-4 h-4 text-indigo-600"></i>
+                Segurança — Troca de Senha
+              </h3>
+              <span id="profile-pwd-status-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                Senha Pessoal Ativa
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 mb-4">Altere sua senha de acesso ao portal. No 1º acesso, a troca da senha temporária é obrigatória.</p>
+
+            <form id="form-change-password" onsubmit="handleChangeMyPassword(event)" class="space-y-3.5">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Senha Atual *</label>
+                <input
+                  type="password"
+                  id="pwd-current"
+                  required
+                  placeholder="Digite sua senha atual"
+                  class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nova Senha *</label>
+                <input
+                  type="password"
+                  id="pwd-new"
+                  required
+                  minlength="4"
+                  placeholder="Digite a nova senha"
+                  class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Confirmar Nova Senha *</label>
+                <input
+                  type="password"
+                  id="pwd-confirm"
+                  required
+                  minlength="4"
+                  placeholder="Repita a nova senha"
+                  class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <button type="submit" class="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-lg transition-colors cursor-pointer">
+                Atualizar Minha Senha
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==========================================
+           ABA 7: BANCO DE SOLUÇÕES (BASEADO NOS ATENDIMENTOS REALIZADOS)
+           ========================================== -->
+      <section id="tab-solutions" class="tab-section space-y-6">
+        <!-- Indicadores do Banco de Soluções -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Total de Soluções Catalogadas</p>
+              <p class="text-2xl font-bold text-slate-900 mt-1" id="sol-kpi-total">0</p>
+              <span class="text-[11px] text-indigo-600 font-medium">Base de conhecimento técnico ativa</span>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <i data-lucide="book-open-check" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Geradas de Chamados Finalizados</p>
+              <p class="text-2xl font-bold text-emerald-600 mt-1" id="sol-kpi-from-tickets">0</p>
+              <span class="text-[11px] text-slate-400">Alimentadas automaticamente nos atendimentos</span>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Tipos de Problema Cobertos</p>
+              <p class="text-2xl font-bold text-slate-900 mt-1" id="sol-kpi-categories">0</p>
+              <span class="text-[11px] text-slate-400">Categorias com diagnóstico e serviço</span>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+              <i data-lucide="lightbulb" class="w-5 h-5"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Barra de Pesquisa, Filtro e Botão de Nova Solução Manual -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="relative flex-1 min-w-[240px]">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+              <input
+                type="text"
+                id="sol-filter-search"
+                oninput="renderSolutionsBank()"
+                placeholder="Buscar no Banco de Soluções por problema encontrado, serviço realizado, protocolo ou técnico..."
+                class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <select
+                id="sol-filter-problem"
+                onchange="renderSolutionsBank()"
+                class="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="ALL">Todos os Tipos de Problema</option>
+              </select>
+
+              <button
+                type="button"
+                onclick="toggleManualSolutionForm()"
+                class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                <span>Registrar Solução Manual</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Formulário expansível para cadastrar solução avulsa -->
+          <form id="form-new-solution" onsubmit="handleCreateManualSolution(event)" class="hidden pt-4 border-t border-slate-200 space-y-3.5">
+            <div class="flex items-center justify-between">
+              <h4 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+                <i data-lucide="file-plus-2" class="w-4 h-4 text-indigo-600"></i>
+                Cadastrar Solução Técnica no Banco de Soluções
+              </h4>
+              <button type="button" onclick="toggleManualSolutionForm()" class="text-xs text-slate-500 hover:text-slate-800 cursor-pointer">
+                Fechar
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Título / Sintoma Resumido *</label>
+                <input type="text" id="sol-title" required placeholder="Ex: Falha de autenticação VPN IPSec Filial" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Problema Relacionado</label>
+                <select id="sol-problem-type" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Problema Encontrado (Diagnóstico Técnico) *</label>
+                <textarea id="sol-problem-found" rows="3" required placeholder="Qual foi a causa raiz ou problema diagnosticado..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Serviço Realizado (Solução Aplicada) *</label>
+                <textarea id="sol-service-performed" rows="3" required placeholder="Descreva passo a passo o serviço executado para resolver..." class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-2">
+              <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs cursor-pointer">
+                Salvar no Banco de Soluções
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Lista de Soluções Baseadas nos Atendimentos Realizados -->
+        <div id="solutions-list-container" class="grid grid-cols-1 gap-4">
+          <!-- Preenchido via JS -->
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ==========================================
+       MODAL: ABRIR NOVO CHAMADO TÉCNICO
+       ========================================== -->
+  <div id="modal-new-ticket" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="plus-square" class="w-5 h-5 text-indigo-400"></i>
+          <h3 class="font-bold text-base">Abertura de Chamado Técnico</h3>
+        </div>
+        <button onclick="closeNewTicketModal()" class="text-slate-400 hover:text-white cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="form-new-ticket" onsubmit="handleCreateTicket(event)" class="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+        <!-- Seleção de Usuário Solicitante e Empresa Cliente -->
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs font-semibold text-slate-700">Usuário que Abriu o Chamado (Solicitante) *</label>
+            <button type="button" id="btn-quick-user" onclick="toggleQuickUserForm()" class="admin-only text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer">
+              + Cadastrar novo usuário rápido
+            </button>
+          </div>
+          <select id="ticket-user" required onchange="onTicketUserChange()" class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <!-- Preenchido via JS -->
+          </select>
+
+          <div class="mt-3">
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Empresa Cliente (Contrato Fixo)</label>
+            <select id="ticket-client" class="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">Contrato Geral / Automático pelo Solicitante</option>
+            </select>
+          </div>
+
+          <!-- Mini-form para cadastro rápido de usuário sem sair do chamado -->
+          <div id="quick-user-box" class="hidden mt-2.5 p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-2.5">
+            <p class="text-xs font-semibold text-indigo-950">Cadastro Rápido de Solicitante</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input type="text" id="quick-user-name" placeholder="Nome do Usuário *" class="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg" />
+              <input type="text" id="quick-user-dept" placeholder="Setor / Departamento *" class="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg" />
+              <input type="email" id="quick-user-email" placeholder="E-mail de Login *" class="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg" />
+              <input type="text" id="quick-user-pass" value="123456" placeholder="Senha *" class="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-mono" />
+            </div>
+            <button type="button" onclick="saveQuickUser()" class="w-full py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 cursor-pointer">
+              Salvar Usuário no Banco e Selecionar
+            </button>
+          </div>
+        </div>
+
+        <!-- Tipo de Problema + Cálculo Automático de SLA -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Problema *</label>
+            <select id="ticket-problem" required onchange="onProblemTypeChange()" class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <!-- Preenchido via JS -->
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Prazo SLA (Horas) *</label>
+            <input type="number" id="ticket-sla" required min="0.5" step="0.5" value="4" class="w-full px-3.5 py-2.5 text-sm font-semibold text-indigo-700 bg-indigo-50/50 border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+        </div>
+
+        <!-- Prioridade e Direcionamento Inicial -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="ticket-admin-fields">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Nível de Prioridade *</label>
+            <select id="ticket-priority" class="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="Crítica">Crítica (Urgente)</option>
+              <option value="Alta">Alta</option>
+              <option value="Média" selected>Média</option>
+              <option value="Baixa">Baixa</option>
+              <option value="Planejada">Planejada</option>
+            </select>
+          </div>
+
+          <div id="ticket-tech-wrapper">
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Direcionamento / Responsável</label>
+            <input type="text" id="ticket-tech" list="tech-options-datalist" placeholder="Aguardando Direcionamento (Admin)" value="Aguardando Direcionamento (Admin)" class="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+        </div>
+
+        <!-- Título / Assunto -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Assunto / Resumo do Problema *</label>
+          <input type="text" id="ticket-title" required placeholder="Ex: Computador do faturamento não acessa a rede" class="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+
+        <!-- Descrição Detalhada -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Descrição Técnica / Relato do Usuário *</label>
+          <textarea id="ticket-desc" rows="3" required placeholder="Descreva os sintomas, mensagens de erro ou impacto na operação..." class="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+        </div>
+
+        <!-- Preview de Vencimento do SLA -->
+        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+          <span class="text-slate-600 flex items-center gap-1.5">
+            <i data-lucide="clock-4" class="w-4 h-4 text-indigo-600"></i>
+            Previsão limite de resolução (SLA):
+          </span>
+          <strong id="ticket-due-preview" class="text-slate-900 font-semibold">--</strong>
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200">
+          <button type="button" onclick="closeNewTicketModal()" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 cursor-pointer">
+            Cancelar
+          </button>
+          <button type="submit" class="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-sm cursor-pointer">
+            Registrar Chamado
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL: DETALHES, DIRECIONAMENTO DO ADMIN & EDIÇÃO COMPLETA DO CHAMADO
+       ========================================== -->
+  <div id="modal-ticket-detail" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <span id="detail-id" class="px-2.5 py-1 rounded-md bg-indigo-600 text-xs font-bold font-mono shrink-0">CH-0000</span>
+          <h3 id="detail-title" class="font-bold text-base truncate">Título do Chamado</h3>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            id="btn-toggle-edit-ticket"
+            onclick="toggleAdminFullTicketEdit()"
+            class="admin-only px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <i data-lucide="pen-square" class="w-3.5 h-3.5"></i>
+            <span>Editar Dados do Chamado</span>
+          </button>
+          <button onclick="closeDetailModal()" class="text-slate-400 hover:text-white cursor-pointer">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="p-6 space-y-5 max-h-[84vh] overflow-y-auto">
+        <!-- Faixa de SLA e Informações do Solicitante -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
+          <div>
+            <span class="text-[11px] font-semibold uppercase text-slate-400">Solicitante & Empresa Cliente</span>
+            <p id="detail-user-name" class="font-bold text-sm text-slate-900 mt-0.5">--</p>
+            <p id="detail-user-meta" class="text-xs text-slate-500">--</p>
+          </div>
+          <div>
+            <span class="text-[11px] font-semibold uppercase text-slate-400">Controle de SLA Contratual</span>
+            <div id="detail-sla-badge" class="mt-1"></div>
+            <p id="detail-dates" class="text-[11px] text-slate-500 mt-1">--</p>
+          </div>
+        </div>
+
+        <!-- Descrição (Modo Leitura) -->
+        <div id="detail-readonly-box">
+          <h4 class="text-xs font-semibold uppercase text-slate-400 mb-1">Descrição do Problema (<span id="detail-problem-name" class="text-indigo-600"></span>)</h4>
+          <p id="detail-desc" class="text-sm text-slate-700 bg-white p-3.5 rounded-lg border border-slate-200 leading-relaxed whitespace-pre-line"></p>
+        </div>
+
+        <!-- Laudo Técnico de Resolução (Modo Leitura — Visível para Solicitante, Técnico e Admin quando preenchido) -->
+        <div id="detail-resolution-readonly-box" class="hidden p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-950 flex items-center gap-1.5">
+              <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600"></i>
+              Laudo de Finalização do Atendimento Técnico
+            </h4>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-200 text-emerald-900">Catalogado no Banco de Soluções</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div class="p-3 rounded-lg bg-white border border-emerald-200">
+              <span class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Problema Encontrado (Diagnóstico)</span>
+              <p id="detail-readonly-problem-found" class="text-slate-800 whitespace-pre-line leading-relaxed">--</p>
+            </div>
+            <div class="p-3 rounded-lg bg-white border border-emerald-200">
+              <span class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Serviço Realizado (Solução Aplicada)</span>
+              <p id="detail-readonly-service-performed" class="text-slate-800 whitespace-pre-line leading-relaxed">--</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             PAINEL EXCLUSIVO ADMIN: TRIAGEM / DIRECIONAR PARA TÉCNICO OU ATENDER EU MESMO
+             ========================================== -->
+        <div id="detail-admin-triage-box" class="admin-only p-4 rounded-xl bg-amber-50/90 border border-amber-200 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 class="text-xs font-bold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                <i data-lucide="git-fork" class="w-4 h-4 text-amber-700"></i>
+                Central de Direcionamento do Administrador
+              </h4>
+              <p class="text-[11px] text-amber-800">Encaminhe este chamado para um Técnico da equipe ou assuma você mesmo o atendimento.</p>
+            </div>
+            <button
+              type="button"
+              onclick="handleAdminSelfAttend()"
+              class="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-indigo-600 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+              <span>Atender Eu Mesmo (Admin)</span>
+            </button>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <select id="detail-assign-select" class="flex-1 min-w-[220px] px-3 py-2 text-sm bg-white border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <!-- Preenchido via JS com os Técnicos e Admins -->
+            </select>
+            <button
+              type="button"
+              onclick="handleAdminAssignToTech()"
+              class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Direcionar para Selecionado
+            </button>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             FORMULÁRIO DE EDIÇÃO COMPLETA DOS DADOS DO CHAMADO (EXCLUSIVO ADMIN)
+             ========================================== -->
+        <form id="detail-admin-full-edit-form" onsubmit="handleSaveFullTicketEdit(event)" class="hidden p-4 rounded-xl bg-slate-100 border border-slate-300 space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+              <i data-lucide="file-edit" class="w-4 h-4 text-indigo-600"></i>
+              Edição Completa do Chamado (Administrador)
+            </h4>
+            <button type="button" onclick="toggleAdminFullTicketEdit()" class="text-xs text-slate-500 hover:text-slate-800 cursor-pointer">
+              Fechar Edição
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Solicitante do Chamado</label>
+              <select id="edit-ticket-user" required class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg"></select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Empresa Cliente (Contrato)</label>
+              <select id="edit-ticket-client" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg"></select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Problema</label>
+              <select id="edit-ticket-problem" required class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg"></select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Prazo de SLA Contratual (Horas)</label>
+              <input type="number" id="edit-ticket-sla" min="0.5" step="0.5" required class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Prioridade</label>
+              <select id="edit-ticket-priority" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg">
+                <option value="Crítica">Crítica</option>
+                <option value="Alta">Alta</option>
+                <option value="Média">Média</option>
+                <option value="Baixa">Baixa</option>
+                <option value="Planejada">Planejada</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Título / Assunto do Chamado</label>
+            <input type="text" id="edit-ticket-title" required class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Descrição Detalhada do Chamado</label>
+            <textarea id="edit-ticket-desc" rows="3" required class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg"></textarea>
+          </div>
+
+          <div class="flex justify-end">
+            <button type="submit" class="px-4 py-2 bg-slate-900 hover:bg-indigo-600 text-white text-xs font-semibold rounded-lg cursor-pointer">
+              Salvar Dados Editados do Chamado
+            </button>
+          </div>
+        </form>
+
+        <!-- Execução e Finalização do Atendimento (Técnico & Admin): Problema Encontrado, Serviço Realizado e Finalizar Chamado -->
+        <form id="detail-admin-form" onsubmit="handleUpdateTicketDetail(event)" class="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-3.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 class="text-xs font-bold uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                <i data-lucide="wrench" class="w-4 h-4 text-indigo-600"></i>
+                Execução & Finalização do Atendimento Técnico
+              </h4>
+              <p class="text-[11px] text-slate-500">Informe o problema encontrado e o serviço realizado. Ao finalizar, a solução é salva automaticamente no Banco de Soluções.</p>
+            </div>
+          </div>
+
+          <!-- Consulta rápida ao Banco de Soluções dentro do atendimento -->
+          <div id="detail-solution-picker-box" class="p-2.5 rounded-lg bg-white border border-indigo-200 flex flex-wrap items-center gap-2">
+            <i data-lucide="book-open-check" class="w-4 h-4 text-indigo-600 shrink-0"></i>
+            <select id="detail-solution-picker" class="flex-1 min-w-[200px] text-xs bg-transparent text-slate-700 focus:outline-none">
+              <option value="">Consultar solução anterior do Banco de Soluções...</option>
+            </select>
+            <button
+              type="button"
+              onclick="applySolutionToTicketForm()"
+              class="px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Preencher com esta Solução
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Status do Chamado</label>
+              <select id="detail-status" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg">
+                <option value="Aberto">Aberto</option>
+                <option value="Em Atendimento">Em Atendimento</option>
+                <option value="Aguardando Cliente">Aguardando Cliente</option>
+                <option value="Resolvido">Resolvido (Encerrar SLA)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Responsável pelo Atendimento</label>
+              <input type="text" id="detail-tech" list="tech-options-datalist" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Horas Trabalhadas (Franquia)</label>
+              <input type="number" id="detail-hours" min="0" step="0.25" class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg" />
+            </div>
+          </div>
+
+          <!-- Campos de Finalização: Problema Encontrado e Serviço Realizado -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div>
+              <label class="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1">
+                <i data-lucide="search-check" class="w-3.5 h-3.5 text-amber-600"></i>
+                Problema Encontrado (Diagnóstico Técnico) *
+              </label>
+              <textarea
+                id="detail-problem-found"
+                rows="3"
+                placeholder="Descreva qual foi o problema/causa encontrada pelo técnico..."
+                class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              ></textarea>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1">
+                <i data-lucide="check-square" class="w-3.5 h-3.5 text-emerald-600"></i>
+                Serviço Realizado (Solução Aplicada) *
+              </label>
+              <textarea
+                id="detail-service-performed"
+                rows="3"
+                placeholder="Descreva o serviço realizado / solução aplicada para resolver o chamado..."
+                class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-indigo-200/70">
+            <button type="button" id="btn-delete-ticket" onclick="handleDeleteCurrentTicket()" class="text-xs text-rose-600 hover:text-rose-800 font-medium cursor-pointer">
+              Excluir Chamado
+            </button>
+            <div class="flex flex-wrap items-center gap-2 ml-auto">
+              <button type="submit" class="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer">
+                Salvar Andamento / Horas
+              </button>
+              <button
+                type="button"
+                onclick="handleFinalizeTicket()"
+                class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                <span>Finalizar Chamado & Salvar Solução</span>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <!-- Datalist global com sugestões de Técnicos e Admin -->
+        <datalist id="tech-options-datalist"></datalist>
+
+        <!-- Histórico de Apontamentos Técnicos / Mensagens do Usuário -->
+        <div class="space-y-3">
+          <h4 class="text-xs font-semibold uppercase text-slate-400">Histórico de Interações & Parecer Técnico</h4>
+          <div id="detail-notes-list" class="space-y-2 max-h-44 overflow-y-auto">
+            <!-- Preenchido via JS -->
+          </div>
+          <form onsubmit="handleAddNote(event)" class="flex gap-2">
+            <input type="text" id="detail-new-note" required placeholder="Escrever mensagem ou parecer técnico no chamado..." class="flex-1 px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <button type="submit" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shrink-0 cursor-pointer">
+              Enviar Interação
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-2"></div>
+
+  <!-- Scripts -->
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

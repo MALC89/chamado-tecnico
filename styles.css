@@ -1,0 +1,198 @@
+/* Estilos complementares e Temas de Cores Personalizáveis — ServiceDesk Pro */
+
+:root,
+[data-theme="indigo"] {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --theme-50: #eef2ff;
+  --theme-100: #e0e7ff;
+  --theme-200: #c7d2fe;
+  --theme-300: #a5b4fc;
+  --theme-400: #818cf8;
+  --theme-500: #6366f1;
+  --theme-600: #4f46e5;
+  --theme-700: #4338ca;
+  --theme-800: #3730a3;
+  --theme-950: #1e1b4b;
+}
+
+[data-theme="blue"] {
+  --theme-50: #f0f9ff;
+  --theme-100: #e0f2fe;
+  --theme-200: #bae6fd;
+  --theme-300: #7dd3fc;
+  --theme-400: #38bdf8;
+  --theme-500: #0ea5e9;
+  --theme-600: #0284c7;
+  --theme-700: #0369a1;
+  --theme-800: #075985;
+  --theme-950: #082f49;
+}
+
+[data-theme="emerald"] {
+  --theme-50: #ecfdf5;
+  --theme-100: #d1fae5;
+  --theme-200: #a7f3d0;
+  --theme-300: #6ee7b7;
+  --theme-400: #34d399;
+  --theme-500: #10b981;
+  --theme-600: #059669;
+  --theme-700: #047857;
+  --theme-800: #065f46;
+  --theme-950: #022c22;
+}
+
+[data-theme="violet"] {
+  --theme-50: #f5f3ff;
+  --theme-100: #ede9fe;
+  --theme-200: #ddd6fe;
+  --theme-300: #c4b5fd;
+  --theme-400: #a78bfa;
+  --theme-500: #8b5cf6;
+  --theme-600: #7c3aed;
+  --theme-700: #6d28d9;
+  --theme-800: #5b21b6;
+  --theme-950: #2e1065;
+}
+
+[data-theme="rose"] {
+  --theme-50: #fff1f2;
+  --theme-100: #ffe4e6;
+  --theme-200: #fecdd3;
+  --theme-300: #fda4af;
+  --theme-400: #fb7185;
+  --theme-500: #f43f5e;
+  --theme-600: #e11d48;
+  --theme-700: #be123c;
+  --theme-800: #9f1239;
+  --theme-950: #4c0519;
+}
+
+[data-theme="amber"] {
+  --theme-50: #fffbeb;
+  --theme-100: #fef3c7;
+  --theme-200: #fde68a;
+  --theme-300: #fcd34d;
+  --theme-400: #fbbf24;
+  --theme-500: #f59e0b;
+  --theme-600: #d97706;
+  --theme-700: #b45309;
+  --theme-800: #92400e;
+  --theme-950: #451a03;
+}
+
+[data-theme="slate"] {
+  --theme-50: #f8fafc;
+  --theme-100: #f1f5f9;
+  --theme-200: #e2e8f0;
+  --theme-300: #cbd5e1;
+  --theme-400: #94a3b8;
+  --theme-500: #64748b;
+  --theme-600: #334155;
+  --theme-700: #1e293b;
+  --theme-800: #0f172a;
+  --theme-950: #020617;
+}
+
+/* Aplicação dinâmica da cor do tema escolhido em todo o sistema */
+.bg-indigo-600 { background-color: var(--theme-600) !important; }
+.bg-indigo-500 { background-color: var(--theme-500) !important; }
+.bg-indigo-800 { background-color: var(--theme-800) !important; }
+.bg-indigo-950 { background-color: var(--theme-950) !important; }
+.bg-indigo-50 { background-color: var(--theme-50) !important; }
+.bg-indigo-100 { background-color: var(--theme-100) !important; }
+.hover\:bg-indigo-700:hover { background-color: var(--theme-700) !important; }
+.hover\:bg-indigo-600:hover { background-color: var(--theme-600) !important; }
+.hover\:bg-indigo-500:hover { background-color: var(--theme-500) !important; }
+.text-indigo-600 { color: var(--theme-600) !important; }
+.text-indigo-700 { color: var(--theme-700) !important; }
+.text-indigo-800 { color: var(--theme-800) !important; }
+.text-indigo-950 { color: var(--theme-950) !important; }
+.text-indigo-400 { color: var(--theme-400) !important; }
+.text-indigo-300 { color: var(--theme-300) !important; }
+.border-indigo-200 { border-color: var(--theme-200) !important; }
+.border-indigo-300 { border-color: var(--theme-300) !important; }
+.border-indigo-800 { border-color: var(--theme-800) !important; }
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/* Animação pulsante suave para chamados com SLA crítico/estourado */
+@keyframes pulse-urgent {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+}
+
+.sla-badge-expired {
+  animation: pulse-urgent 2s infinite;
+}
+
+/* Barra de rolagem sutil */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Transições de abas */
+.tab-section {
+  display: none;
+}
+
+.tab-section.active {
+  display: block;
+  animation: fadeIn 0.18s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Estilo de impressão / Exportação PDF */
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+  aside,
+  .no-print,
+  #modal-backdrop,
+  #toast-container {
+    display: none !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .print-card {
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+    break-inside: avoid;
+  }
+}

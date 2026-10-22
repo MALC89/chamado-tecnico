@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: servicedesk-pro
+    runtime: python
+    buildCommand: ""
+    startCommand: python3 server.py
+    envVars:
+      - key: DB_PATH
+        value: /data/database.db
+    disk:
+      name: sqlite-data
+      mountPath: /data
+      sizeGB: 1
