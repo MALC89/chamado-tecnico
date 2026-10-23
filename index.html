@@ -1323,6 +1323,32 @@
               </div>
             </div>
 
+            <!-- Upload de Documentação de Apoio em PDF -->
+            <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <i data-lucide="file-text" class="w-4 h-4 text-rose-600"></i>
+                    Documentação de Apoio em PDF (Manuais, Procedimentos, Topologias)
+                  </p>
+                  <p class="text-[11px] text-slate-500">Anexe um ou mais arquivos PDF como documentação complementar desta solução (máx. 10MB por PDF).</p>
+                </div>
+                <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer shadow-xs transition-colors">
+                  <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                  <span>Selecionar Arquivo(s) PDF</span>
+                  <input
+                    type="file"
+                    id="sol-pdf-input"
+                    accept="application/pdf,.pdf"
+                    multiple
+                    onchange="handleManualSolutionPdfSelected(event)"
+                    class="hidden"
+                  />
+                </label>
+              </div>
+              <div id="sol-pending-pdfs-list" class="flex flex-wrap gap-2"></div>
+            </div>
+
             <div class="flex justify-end gap-2">
               <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs cursor-pointer">
                 Salvar no Banco de Soluções
@@ -1330,6 +1356,16 @@
             </div>
           </form>
         </div>
+
+        <!-- Input global oculto para anexar PDF em qualquer solução já cadastrada -->
+        <input
+          type="file"
+          id="existing-solution-pdf-input"
+          accept="application/pdf,.pdf"
+          multiple
+          onchange="handleExistingSolutionPdfSelected(event)"
+          class="hidden"
+        />
 
         <!-- Lista de Soluções Baseadas nos Atendimentos Realizados -->
         <div id="solutions-list-container" class="grid grid-cols-1 gap-4">
@@ -1700,6 +1736,32 @@
             </div>
           </div>
 
+          <!-- Upload opcional de Documentação PDF ao finalizar o chamado -->
+          <div class="p-3 rounded-xl bg-white border border-indigo-200/80 space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <i data-lucide="file-text" class="w-4 h-4 text-rose-600 shrink-0"></i>
+                <div>
+                  <p class="text-xs font-bold text-slate-800">Documentação de Apoio em PDF (Opcional — Vai para o Banco de Soluções)</p>
+                  <p class="text-[11px] text-slate-500">Anexe manuais, relatórios técnicos ou tutoriais em PDF utilizados neste atendimento.</p>
+                </div>
+              </div>
+              <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 text-xs font-semibold cursor-pointer transition-colors">
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                <span>Anexar PDF</span>
+                <input
+                  type="file"
+                  id="detail-solution-pdf-input"
+                  accept="application/pdf,.pdf"
+                  multiple
+                  onchange="handleTicketSolutionPdfSelected(event)"
+                  class="hidden"
+                />
+              </label>
+            </div>
+            <div id="detail-pending-pdfs-list" class="flex flex-wrap gap-2"></div>
+          </div>
+
           <div class="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-indigo-200/70">
             <button type="button" id="btn-delete-ticket" onclick="handleDeleteCurrentTicket()" class="text-xs text-rose-600 hover:text-rose-800 font-medium cursor-pointer">
               Excluir Chamado
@@ -1736,6 +1798,47 @@
             </button>
           </form>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL: VISUALIZADOR DE DOCUMENTAÇÃO PDF (BANCO DE SOLUÇÕES)
+       ========================================== -->
+  <div id="modal-pdf-viewer" class="fixed inset-0 z-50 hidden bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-5xl w-full h-[88vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+      <div class="px-5 py-3.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="px-2 py-0.5 rounded bg-rose-600 text-[11px] font-bold uppercase shrink-0">PDF</span>
+          <h3 id="pdf-viewer-title" class="font-bold text-sm truncate">Documentação de Apoio.pdf</h3>
+        </div>
+        <div class="flex items-center gap-2">
+          <a
+            id="pdf-viewer-open-tab"
+            href="#"
+            target="_blank"
+            rel="noopener"
+            class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+          >
+            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+            <span>Abrir em Nova Guia</span>
+          </a>
+          <a
+            id="pdf-viewer-download"
+            href="#"
+            download="documentacao.pdf"
+            class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+          >
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>Baixar PDF</span>
+          </a>
+          <button type="button" onclick="closePdfViewerModal()" class="text-slate-400 hover:text-white ml-1 cursor-pointer">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 bg-slate-100">
+        <iframe id="pdf-viewer-frame" src="" class="w-full h-full border-0" title="Visualizador de PDF"></iframe>
       </div>
     </div>
   </div>

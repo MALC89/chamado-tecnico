@@ -1420,6 +1420,11 @@ function openDetailModal(ticketId) {
     if (probFoundEl) probFoundEl.value = ticket.problemFound || '';
     if (servPerfEl) servPerfEl.value = ticket.servicePerformed || '';
 
+    pendingTicketSolutionPdfs = [];
+    const ticketPdfInput = document.getElementById('detail-solution-pdf-input');
+    if (ticketPdfInput) ticketPdfInput.value = '';
+    renderPendingTicketSolutionPdfs();
+
     // Popula seletor rápido de soluções do Banco de Soluções para reaproveitar diagnóstico/serviço
     const solPicker = document.getElementById('detail-solution-picker');
     if (solPicker) {
@@ -1601,8 +1606,10 @@ async function handleUpdateTicketDetail(e) {
     technician,
     hoursSpent,
     problemFound,
-    servicePerformed
+    servicePerformed,
+    solutionAttachments: pendingTicketSolutionPdfs
   });
+  pendingTicketSolutionPdfs = [];
   openDetailModal(activeTicketId);
   refreshAllViews();
   showToast(
@@ -1641,8 +1648,10 @@ async function handleFinalizeTicket() {
     technician,
     hoursSpent,
     problemFound,
-    servicePerformed
+    servicePerformed,
+    solutionAttachments: pendingTicketSolutionPdfs
   });
+  pendingTicketSolutionPdfs = [];
 
   const roleTag = session?.role === 'ADMIN' ? 'Admin' : 'Técnico';
   const author = `${session?.name || technician} (${roleTag})`;
@@ -1692,12 +1701,221 @@ async function handleDeleteCurrentTicket() {
 }
 
 // ==========================================
-// ABA: BANCO DE SOLUÇÕES TÉCNICAS (BASEADO NOS ATENDIMENTOS REALIZADOS)
+// ABA: BANCO DE SOLUÇÕES TÉCNICAS & UPLOAD DE DOCUMENTAÇÃO EM PDF
 // ==========================================
+let pendingManualSolutionPdfs = [];
+let pendingTicketSolutionPdfs = [];
+let targetSolutionIdForPdfUpload = null;
+let currentPdfBlobUrl = null;
+
+function formatFileSize(bytes) {
+  const num = Number(bytes) || 0;
+  if (num < 1024) return `${num} B`;
+  if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
+  return `${(num / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function readPdfFilesFromInput(fileList) {
+  const files = Array.from(fileList || []);
+  const promises = [];
+
+  for (const file of files) {
+    const isPdf =
+      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      showToast(`O arquivo "${file.name}" não é um PDF válido.`, 'error');
+      continue;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast(`O arquivo "${file.name}" excede o limite de 10MB.`, 'error');
+      continue;
+    }
+
+    promises.push(
+      new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve({
+            id: 'pdf-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+            name: file.name,
+            size: file.size,
+            dataUrl: reader.result,
+            uploadedAt: new Date().toISOString()
+          });
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      })
+    );
+  }
+
+  return Promise.all(promises).then((list) => list.filter(Boolean));
+}
+
+async function handleManualSolutionPdfSelected(e) {
+  const added = await readPdfFilesFromInput(e.target.files);
+  if (added.length > 0) {
+    pendingManualSolutionPdfs.push(...added);
+    renderPendingManualSolutionPdfs();
+    showToast(`${added.length} arquivo(s) PDF anexado(s) ao rascunho da solução!`);
+  }
+  e.target.value = '';
+}
+
+function removePendingManualPdf(attId) {
+  pendingManualSolutionPdfs = pendingManualSolutionPdfs.filter((a) => a.id !== attId);
+  renderPendingManualSolutionPdfs();
+}
+
+function renderPendingManualSolutionPdfs() {
+  const box = document.getElementById('sol-pending-pdfs-list');
+  if (!box) return;
+  if (pendingManualSolutionPdfs.length === 0) {
+    box.innerHTML = `<span class="text-[11px] text-slate-400 italic">Nenhum arquivo PDF selecionado ainda.</span>`;
+    return;
+  }
+  box.innerHTML = pendingManualSolutionPdfs
+    .map(
+      (att) => `
+      <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-rose-200 text-xs font-medium text-slate-800 shadow-2xs">
+        <span class="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold text-[10px]">PDF</span>
+        <span class="truncate max-w-[200px]">${escapeHtml(att.name)}</span>
+        <span class="text-[10px] text-slate-400">(${formatFileSize(att.size)})</span>
+        <button type="button" onclick="removePendingManualPdf('${att.id}')" class="text-slate-400 hover:text-rose-600 font-bold cursor-pointer" title="Remover">✕</button>
+      </span>
+    `
+    )
+    .join('');
+}
+
+async function handleTicketSolutionPdfSelected(e) {
+  const added = await readPdfFilesFromInput(e.target.files);
+  if (added.length > 0) {
+    pendingTicketSolutionPdfs.push(...added);
+    renderPendingTicketSolutionPdfs();
+    showToast(`${added.length} PDF(s) preparado(s) para o Banco de Soluções!`);
+  }
+  e.target.value = '';
+}
+
+function removePendingTicketPdf(attId) {
+  pendingTicketSolutionPdfs = pendingTicketSolutionPdfs.filter((a) => a.id !== attId);
+  renderPendingTicketSolutionPdfs();
+}
+
+function renderPendingTicketSolutionPdfs() {
+  const box = document.getElementById('detail-pending-pdfs-list');
+  if (!box) return;
+  if (pendingTicketSolutionPdfs.length === 0) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = pendingTicketSolutionPdfs
+    .map(
+      (att) => `
+      <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-rose-50/70 border border-rose-200 text-xs font-medium text-slate-800">
+        <span class="px-1.5 py-0.5 rounded bg-rose-600 text-white font-bold text-[10px]">PDF</span>
+        <span class="truncate max-w-[180px]">${escapeHtml(att.name)}</span>
+        <span class="text-[10px] text-slate-500">(${formatFileSize(att.size)})</span>
+        <button type="button" onclick="removePendingTicketPdf('${att.id}')" class="text-slate-400 hover:text-rose-600 font-bold cursor-pointer">✕</button>
+      </span>
+    `
+    )
+    .join('');
+}
+
+function triggerUploadPdfForSolution(solId) {
+  targetSolutionIdForPdfUpload = solId;
+  const input = document.getElementById('existing-solution-pdf-input');
+  if (input) {
+    input.value = '';
+    input.click();
+  }
+}
+
+async function handleExistingSolutionPdfSelected(e) {
+  const solId = targetSolutionIdForPdfUpload;
+  targetSolutionIdForPdfUpload = null;
+  if (!solId) return;
+
+  const added = await readPdfFilesFromInput(e.target.files);
+  e.target.value = '';
+  if (added.length === 0) return;
+
+  for (const att of added) {
+    await window.db.addSolutionAttachment(solId, att);
+  }
+  refreshAllViews();
+  showToast(`${added.length} documento(s) PDF anexado(s) à solução com sucesso!`);
+}
+
+async function handleRemoveSolutionAttachment(solId, attId) {
+  await window.db.removeSolutionAttachment(solId, attId);
+  refreshAllViews();
+  showToast('Arquivo PDF removido da solução.', 'info');
+}
+
+function dataUrlToBlobUrl(dataUrl) {
+  try {
+    const parts = dataUrl.split(',');
+    const byteString = atob(parts[1]);
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    const blob = new Blob([ab], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch (err) {
+    return dataUrl;
+  }
+}
+
+function openPdfViewerModal(solId, attId) {
+  const sol = window.db.getSolutions().find((s) => s.id === solId);
+  if (!sol || !Array.isArray(sol.attachments)) return;
+  const att = sol.attachments.find((a) => a.id === attId);
+  if (!att || !att.dataUrl) return;
+
+  if (currentPdfBlobUrl && currentPdfBlobUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(currentPdfBlobUrl);
+  }
+  currentPdfBlobUrl = dataUrlToBlobUrl(att.dataUrl);
+
+  const titleEl = document.getElementById('pdf-viewer-title');
+  const frameEl = document.getElementById('pdf-viewer-frame');
+  const openTabEl = document.getElementById('pdf-viewer-open-tab');
+  const downloadEl = document.getElementById('pdf-viewer-download');
+
+  if (titleEl) titleEl.textContent = `${att.name} (${formatFileSize(att.size)})`;
+  if (frameEl) frameEl.src = currentPdfBlobUrl;
+  if (openTabEl) openTabEl.href = currentPdfBlobUrl;
+  if (downloadEl) {
+    downloadEl.href = currentPdfBlobUrl;
+    downloadEl.download = att.name || 'documentacao-apoio.pdf';
+  }
+
+  document.getElementById('modal-pdf-viewer')?.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closePdfViewerModal() {
+  const frameEl = document.getElementById('pdf-viewer-frame');
+  if (frameEl) frameEl.src = '';
+  if (currentPdfBlobUrl && currentPdfBlobUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(currentPdfBlobUrl);
+    currentPdfBlobUrl = null;
+  }
+  document.getElementById('modal-pdf-viewer')?.classList.add('hidden');
+}
+
 function toggleManualSolutionForm() {
   const form = document.getElementById('form-new-solution');
   if (!form) return;
   form.classList.toggle('hidden');
+  renderPendingManualSolutionPdfs();
 }
 
 async function handleCreateManualSolution(e) {
@@ -1721,12 +1939,15 @@ async function handleCreateManualSolution(e) {
       problemFound,
       servicePerformed,
       technician: session?.name || 'Equipe Técnica',
-      hoursSpent: 0
+      hoursSpent: 0,
+      attachments: pendingManualSolutionPdfs
     });
+    pendingManualSolutionPdfs = [];
+    renderPendingManualSolutionPdfs();
     document.getElementById('form-new-solution')?.reset();
     document.getElementById('form-new-solution')?.classList.add('hidden');
     refreshAllViews();
-    showToast('Solução técnica adicionada ao Banco de Soluções!');
+    showToast('Solução técnica e documentação salvos no Banco de Soluções!');
   } catch (err) {
     showToast(err.message || 'Erro ao salvar solução.', 'error');
   }
@@ -1760,6 +1981,7 @@ function renderSolutionsBank() {
     if (probFilter !== 'ALL' && s.problemTypeId !== probFilter) return false;
     if (search) {
       const pName = probMap[s.problemTypeId]?.name || '';
+      const pdfNames = (s.attachments || []).map((a) => a.name).join(' ');
       const haystack = [
         s.id,
         s.ticketId,
@@ -1767,7 +1989,8 @@ function renderSolutionsBank() {
         s.problemFound,
         s.servicePerformed,
         s.technician,
-        pName
+        pName,
+        pdfNames
       ]
         .join(' ')
         .toLowerCase();
@@ -1803,6 +2026,65 @@ function renderSolutionsBank() {
              Artigo Manual
            </span>`;
 
+      const attachments = Array.isArray(s.attachments) ? s.attachments : [];
+      const attachmentsHtml = `
+        <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <i data-lucide="file-text" class="w-3.5 h-3.5 text-rose-600"></i>
+              Documentação de Apoio em PDF (${attachments.length})
+            </span>
+            <button
+              type="button"
+              onclick="triggerUploadPdfForSolution('${s.id}')"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+              <span>+ Subir PDF de Apoio</span>
+            </button>
+          </div>
+          ${
+            attachments.length === 0
+              ? `<p class="text-xs text-slate-400 italic">Nenhum PDF de apoio anexado a esta solução ainda. Clique em <strong>"+ Subir PDF de Apoio"</strong> para anexar manuais, diagramas ou procedimentos.</p>`
+              : `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  ${attachments
+                    .map(
+                      (att) => `
+                      <div class="p-2.5 rounded-lg bg-white border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                          <span class="px-2 py-1 rounded bg-rose-100 text-rose-700 font-bold text-[10px] uppercase shrink-0">PDF</span>
+                          <div class="min-w-0">
+                            <p class="text-xs font-semibold text-slate-800 truncate" title="${escapeHtml(att.name)}">${escapeHtml(att.name)}</p>
+                            <p class="text-[10px] text-slate-400">${formatFileSize(att.size)}</p>
+                          </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onclick="openPdfViewerModal('${s.id}', '${att.id}')"
+                            class="px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+                            title="Abrir e ler PDF"
+                          >
+                            Abrir PDF
+                          </button>
+                          <button
+                            type="button"
+                            onclick="handleRemoveSolutionAttachment('${s.id}', '${att.id}')"
+                            class="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Remover PDF"
+                          >
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                          </button>
+                        </div>
+                      </div>
+                    `
+                    )
+                    .join('')}
+                </div>`
+          }
+        </div>
+      `;
+
       return `
         <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-3 hover:border-indigo-300 transition-colors">
           <div class="flex flex-wrap items-start justify-between gap-2">
@@ -1816,6 +2098,10 @@ function renderSolutionsBank() {
             </div>
 
             <div class="flex items-center gap-2">
+              <button type="button" onclick="triggerUploadPdfForSolution('${s.id}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 text-xs font-semibold transition-colors cursor-pointer">
+                <i data-lucide="file-up" class="w-3.5 h-3.5"></i>
+                Anexar PDF
+              </button>
               <button type="button" onclick="copySolutionText('${s.id}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700 text-xs font-semibold transition-colors cursor-pointer">
                 <i data-lucide="copy" class="w-3.5 h-3.5"></i>
                 Copiar Solução
@@ -1847,6 +2133,8 @@ function renderSolutionsBank() {
               <p class="text-xs text-slate-800 whitespace-pre-line leading-relaxed">${escapeHtml(s.servicePerformed)}</p>
             </div>
           </div>
+
+          ${attachmentsHtml}
 
           <div class="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
             <span>Técnico Responsável: <strong class="text-slate-700">${escapeHtml(s.technician || 'Equipe Técnica')}</strong></span>

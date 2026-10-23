@@ -653,6 +653,12 @@ class DatabaseService {
     if (updated.status === 'Resolvido' && (updated.problemFound || updated.servicePerformed)) {
       if (!Array.isArray(this.state.solutions)) this.state.solutions = [];
       const existingIdx = this.state.solutions.findIndex((s) => s.ticketId === updated.id);
+      const prevAtts = existingIdx >= 0 && Array.isArray(this.state.solutions[existingIdx].attachments)
+        ? [...this.state.solutions[existingIdx].attachments]
+        : [];
+      const incomingAtts = Array.isArray(updates.solutionAttachments) ? updates.solutionAttachments : [];
+      const mergedAtts = [...prevAtts, ...incomingAtts];
+
       const solRecord = {
         id: existingIdx >= 0 ? this.state.solutions[existingIdx].id : 'sol-' + Date.now().toString(36),
         ticketId: updated.id,
@@ -662,6 +668,7 @@ class DatabaseService {
         servicePerformed: updated.servicePerformed || 'Não especificado',
         technician: updated.technician || 'Equipe Técnica',
         hoursSpent: Number(updated.hoursSpent) || 0,
+        attachments: mergedAtts,
         createdAt: updated.resolvedAt || new Date().toISOString()
       };
       if (existingIdx >= 0) {
@@ -675,9 +682,14 @@ class DatabaseService {
     return updated;
   }
 
-  // --- BANCO DE SOLUÇÕES (BASEADO NOS ATENDIMENTOS REALIZADOS) ---
+  // --- BANCO DE SOLUÇÕES (BASEADO NOS ATENDIMENTOS REALIZADOS + DOCUMENTAÇÃO PDF) ---
   getSolutions() {
-    const list = Array.isArray(this.state.solutions) ? [...this.state.solutions] : [];
+    const list = Array.isArray(this.state.solutions)
+      ? this.state.solutions.map((s) => ({
+          ...s,
+          attachments: Array.isArray(s.attachments) ? s.attachments : []
+        }))
+      : [];
     const byTicket = new Set(list.map((s) => s.ticketId).filter(Boolean));
     // Garante que qualquer chamado Resolvido com problema encontrado / serviço realizado apareça no Banco de Soluções
     (this.state.tickets || []).forEach((t) => {
@@ -691,6 +703,7 @@ class DatabaseService {
           servicePerformed: t.servicePerformed || 'Não especificado',
           technician: t.technician || 'Equipe Técnica',
           hoursSpent: Number(t.hoursSpent) || 0,
+          attachments: [],
           createdAt: t.resolvedAt || t.createdAt
         });
       }
@@ -707,7 +720,8 @@ class DatabaseService {
       problemFound: (solData.problemFound || '').trim(),
       servicePerformed: (solData.servicePerformed || '').trim(),
       technician: (solData.technician || 'Equipe Técnica').trim(),
-      hoursSpent: Number(solData.hoursSpent) || 0
+      hoursSpent: Number(solData.hoursSpent) || 0,
+      attachments: Array.isArray(solData.attachments) ? solData.attachments : []
     };
 
     if (!payload.title || !payload.problemFound || !payload.servicePerformed) {
@@ -737,6 +751,65 @@ class DatabaseService {
     this.state.solutions.unshift(newSol);
     this.saveLocalCache();
     return newSol;
+  }
+
+  async addSolutionAttachment(solutionId, attachment) {
+    if (this.sqliteConnected) {
+      const res = await fetch('/api/solutions/attachments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          solutionId,
+          action: 'add',
+          attachment
+        })
+      });
+      if (res.ok) {
+        const out = await res.json();
+        this.state = { ...this.state, ...out.state };
+        this.saveLocalCache();
+        return;
+      }
+    }
+
+    if (!Array.isArray(this.state.solutions)) this.state.solutions = [];
+    const idx = this.state.solutions.findIndex((s) => s.id === solutionId);
+    if (idx >= 0) {
+      if (!Array.isArray(this.state.solutions[idx].attachments)) {
+        this.state.solutions[idx].attachments = [];
+      }
+      this.state.solutions[idx].attachments.push(attachment);
+      this.saveLocalCache();
+    }
+  }
+
+  async removeSolutionAttachment(solutionId, attachmentId) {
+    if (this.sqliteConnected) {
+      const res = await fetch('/api/solutions/attachments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          solutionId,
+          action: 'remove',
+          attachmentId
+        })
+      });
+      if (res.ok) {
+        const out = await res.json();
+        this.state = { ...this.state, ...out.state };
+        this.saveLocalCache();
+        return;
+      }
+    }
+
+    if (!Array.isArray(this.state.solutions)) return;
+    const idx = this.state.solutions.findIndex((s) => s.id === solutionId);
+    if (idx >= 0 && Array.isArray(this.state.solutions[idx].attachments)) {
+      this.state.solutions[idx].attachments = this.state.solutions[idx].attachments.filter(
+        (a) => a.id !== attachmentId
+      );
+      this.saveLocalCache();
+    }
   }
 
   async deleteSolution(id) {
@@ -796,7 +869,7 @@ class DatabaseService {
   }
 
   getPostgresSchemaSQL() {
-    return `-- Schema SQL pronto para Supabase / PostgreSQL (Multi-Clientes + Hierarquia + Banco de Soluções)
+    return `-- Schema SQL pronto para Supabase / PostgreSQL (Multi-Clientes + Hierarquia + Banco de Soluções + PDFs)
 CREATE TABLE clients (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -867,6 +940,7 @@ CREATE TABLE solutions (
   service_performed TEXT NOT NULL,
   technician TEXT,
   hours_spent NUMERIC DEFAULT 0,
+  attachments JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );`;
   }

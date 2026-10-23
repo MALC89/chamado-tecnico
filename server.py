@@ -185,9 +185,14 @@ def init_db():
             service_performed TEXT NOT NULL,
             technician TEXT DEFAULT '',
             hours_spent REAL DEFAULT 0,
+            attachments_json TEXT DEFAULT '[]',
             created_at TEXT NOT NULL
         );
     """)
+
+    sol_cols = [row["name"] for row in cur.execute("PRAGMA table_info(solutions);").fetchall()]
+    if "attachments_json" not in sol_cols:
+        cur.execute("ALTER TABLE solutions ADD COLUMN attachments_json TEXT DEFAULT '[]';")
 
     conn.commit()
     conn.close()
@@ -306,6 +311,7 @@ def fetch_full_state():
             "servicePerformed": r["service_performed"],
             "technician": r["technician"] or "",
             "hoursSpent": float(r["hours_spent"] or 0),
+            "attachments": json.loads((r["attachments_json"] if "attachments_json" in r.keys() else "[]") or "[]"),
             "createdAt": r["created_at"]
         }
         for r in cur.fetchall()
@@ -817,10 +823,18 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
 
                 # Alimenta automaticamente o Banco de Soluções quando o chamado é finalizado com Problema Encontrado e/ou Serviço Realizado
                 if new_status == "Resolvido" and (new_prob_found or new_serv_perf):
-                    cur.execute("SELECT id FROM solutions WHERE ticket_id = ?;", (tid,))
+                    cur.execute("SELECT id, attachments_json FROM solutions WHERE ticket_id = ?;", (tid,))
                     existing_sol = cur.fetchone()
                     now_iso = resolved_at or datetime.now(timezone.utc).isoformat()
+                    incoming_attachments = body.get("solutionAttachments") or []
+
                     if existing_sol:
+                        current_atts = json.loads((existing_sol["attachments_json"] if "attachments_json" in existing_sol.keys() else "[]") or "[]")
+                        if incoming_attachments:
+                            existing_ids = {a.get("id") for a in current_atts if isinstance(a, dict)}
+                            for att in incoming_attachments:
+                                if isinstance(att, dict) and att.get("id") not in existing_ids:
+                                    current_atts.append(att)
                         cur.execute("""
                             UPDATE solutions SET
                                 problem_type_id = ?,
@@ -829,6 +843,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                                 service_performed = ?,
                                 technician = ?,
                                 hours_spent = ?,
+                                attachments_json = ?,
                                 created_at = ?
                             WHERE id = ?;
                         """, (
@@ -838,6 +853,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                             new_serv_perf or "Não especificado",
                             new_tech,
                             new_hours,
+                            json.dumps(current_atts, ensure_ascii=False),
                             now_iso,
                             existing_sol["id"]
                         ))
@@ -846,8 +862,8 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                         cur.execute("""
                             INSERT INTO solutions (
                                 id, ticket_id, problem_type_id, title, problem_found,
-                                service_performed, technician, hours_spent, created_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                                service_performed, technician, hours_spent, attachments_json, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                         """, (
                             sol_id,
                             tid,
@@ -857,6 +873,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                             new_serv_perf or "Não especificado",
                             new_tech,
                             new_hours,
+                            json.dumps(incoming_attachments, ensure_ascii=False),
                             now_iso
                         ))
 
@@ -868,11 +885,12 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             if parsed.path == "/api/solutions":
                 sol_id = body.get("id") or ("sol-" + str(int(time.time() * 1000)))
                 now_iso = datetime.now(timezone.utc).isoformat()
+                attachments = body.get("attachments") if isinstance(body.get("attachments"), list) else []
                 cur.execute("""
                     INSERT OR REPLACE INTO solutions (
                         id, ticket_id, problem_type_id, title, problem_found,
-                        service_performed, technician, hours_spent, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        service_performed, technician, hours_spent, attachments_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """, (
                     sol_id,
                     (body.get("ticketId") or "").strip(),
@@ -882,10 +900,65 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     (body.get("servicePerformed") or "").strip(),
                     (body.get("technician") or "Equipe Técnica").strip(),
                     float(body.get("hoursSpent") or 0),
+                    json.dumps(attachments, ensure_ascii=False),
                     now_iso
                 ))
                 conn.commit()
                 self._send_json({"ok": True, "solutionId": sol_id, "state": fetch_full_state()})
+                return
+
+            # 6C. ANEXAR OU REMOVER ARQUIVO PDF EM UMA SOLUÇÃO EXISTENTE
+            if parsed.path == "/api/solutions/attachments":
+                sol_id = (body.get("solutionId") or "").strip()
+                action = body.get("action") or "add"
+                cur.execute("SELECT * FROM solutions WHERE id = ?;", (sol_id,))
+                sol_row = cur.fetchone()
+
+                # Caso a solução tenha sido gerada de um chamado antes da tabela solutions existir
+                if not sol_row and sol_id.startswith("sol-auto-"):
+                    ticket_id_ref = sol_id.replace("sol-auto-", "")
+                    cur.execute("SELECT * FROM tickets WHERE id = ?;", (ticket_id_ref,))
+                    t_row = cur.fetchone()
+                    if t_row:
+                        now_iso = t_row["resolved_at"] or t_row["created_at"]
+                        cur.execute("""
+                            INSERT INTO solutions (
+                                id, ticket_id, problem_type_id, title, problem_found,
+                                service_performed, technician, hours_spent, attachments_json, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', ?);
+                        """, (
+                            sol_id,
+                            t_row["id"],
+                            t_row["problem_type_id"] or "",
+                            t_row["title"],
+                            t_row["problem_found"] or "Não especificado",
+                            t_row["service_performed"] or "Não especificado",
+                            t_row["technician"] or "Equipe Técnica",
+                            float(t_row["hours_spent"] or 0),
+                            now_iso
+                        ))
+                        cur.execute("SELECT * FROM solutions WHERE id = ?;", (sol_id,))
+                        sol_row = cur.fetchone()
+
+                if not sol_row:
+                    self._send_json({"ok": False, "error": "Solução não encontrada."}, 404)
+                    return
+
+                atts = json.loads((sol_row["attachments_json"] if "attachments_json" in sol_row.keys() else "[]") or "[]")
+                if action == "add":
+                    new_att = body.get("attachment")
+                    if isinstance(new_att, dict) and new_att.get("dataUrl"):
+                        atts.append(new_att)
+                elif action == "remove":
+                    att_id = body.get("attachmentId")
+                    atts = [a for a in atts if a.get("id") != att_id]
+
+                cur.execute(
+                    "UPDATE solutions SET attachments_json = ? WHERE id = ?;",
+                    (json.dumps(atts, ensure_ascii=False), sol_id)
+                )
+                conn.commit()
+                self._send_json({"ok": True, "state": fetch_full_state()})
                 return
 
             # 7. ADICIONAR NOTA / INTERAÇÃO NO CHAMADO
