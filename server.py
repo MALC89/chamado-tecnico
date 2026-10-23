@@ -329,6 +329,12 @@ def fetch_full_state():
 
 
 class AppRequestHandler(SimpleHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        # Evita poluir o log com o polling em tempo real de /api/state
+        if self.command == "GET" and self.path.startswith("/api/state"):
+            return
+        super().log_message(fmt, *args)
+
     def _send_json(self, data, status=200):
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)

@@ -52,6 +52,89 @@ class DatabaseService {
       this.state.solutions = [];
     }
     this.sqliteConnected = false;
+    this.lastStateSignature = this.computeStateSignature(this.state);
+    this.onRealtimeUpdateCallback = null;
+
+    // Canal de comunicação instantânea entre abas do mesmo navegador
+    try {
+      this.broadcastChannel = new BroadcastChannel('servicedesk_realtime_sync');
+      this.broadcastChannel.onmessage = (event) => {
+        if (event.data && event.data.type === 'STATE_MUTATED') {
+          this.syncFromServer();
+        }
+      };
+    } catch (_) {
+      this.broadcastChannel = null;
+    }
+  }
+
+  computeStateSignature(st) {
+    if (!st) return '';
+    const ticketsPart = (st.tickets || []).map((t) => [
+      t.id,
+      t.status,
+      t.technician,
+      t.hoursSpent,
+      t.problemFound || '',
+      t.servicePerformed || '',
+      t.priority,
+      t.slaHours,
+      t.title,
+      (t.notes || []).length
+    ]);
+    const solutionsPart = (st.solutions || []).map((s) => [
+      s.id,
+      s.title,
+      (s.attachments || []).length
+    ]);
+    const usersPart = (st.users || []).map((u) => [u.id, u.name, u.isBlocked, u.accessRole, u.clientId]);
+    const clientsPart = (st.clients || []).map((c) => [c.id, c.name, c.monthlyHoursQuota, c.status]);
+    return JSON.stringify({ ticketsPart, solutionsPart, usersPart, clientsPart });
+  }
+
+  diffTicketChanges(oldTickets, newTickets) {
+    const events = [];
+    const oldMap = new Map((oldTickets || []).map((t) => [t.id, t]));
+
+    for (const next of newTickets || []) {
+      const prev = oldMap.get(next.id);
+      if (!prev) {
+        events.push({ type: 'NEW_TICKET', ticket: next });
+        continue;
+      }
+      if (prev.technician !== next.technician) {
+        events.push({
+          type: 'ASSIGNED_TECH',
+          ticket: next,
+          previousTechnician: prev.technician,
+          newTechnician: next.technician
+        });
+      }
+      if (prev.status !== 'Resolvido' && next.status === 'Resolvido') {
+        events.push({
+          type: 'TICKET_FINALIZED',
+          ticket: next
+        });
+      } else if (prev.status !== next.status) {
+        events.push({
+          type: 'STATUS_CHANGED',
+          ticket: next,
+          previousStatus: prev.status,
+          newStatus: next.status
+        });
+      }
+      const prevNotesLen = (prev.notes || []).length;
+      const nextNotesLen = (next.notes || []).length;
+      if (nextNotesLen > prevNotesLen) {
+        const lastNote = next.notes[nextNotesLen - 1];
+        events.push({
+          type: 'NEW_NOTE',
+          ticket: next,
+          note: lastNote
+        });
+      }
+    }
+    return events;
   }
 
   loadLocalCache() {
@@ -68,8 +151,16 @@ class DatabaseService {
     }
   }
 
-  saveLocalCache() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+  saveLocalCache(broadcast = true) {
+    this.lastStateSignature = this.computeStateSignature(this.state);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+    } catch (_) {}
+    if (broadcast && this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage({ type: 'STATE_MUTATED', ts: Date.now() });
+      } catch (_) {}
+    }
   }
 
   async initFromServer() {
@@ -87,13 +178,61 @@ class DatabaseService {
           solutions: serverState.solutions || []
         };
         this.sqliteConnected = true;
-        this.saveLocalCache();
+        this.saveLocalCache(false);
         return true;
       }
     } catch (_) {
       this.sqliteConnected = false;
     }
     return false;
+  }
+
+  async syncFromServer() {
+    try {
+      const res = await fetch('/api/state', { cache: 'no-store' });
+      if (!res.ok) return { changed: false, events: [] };
+      const serverState = await res.json();
+      this.sqliteConnected = true;
+
+      const nextSig = this.computeStateSignature(serverState);
+      if (nextSig === this.lastStateSignature) {
+        return { changed: false, events: [] };
+      }
+
+      const oldTickets = this.state.tickets || [];
+      const newTickets = serverState.tickets || [];
+      const events = this.diffTicketChanges(oldTickets, newTickets);
+
+      this.state = {
+        ...this.state,
+        contract: { ...this.state.contract, ...serverState.contract },
+        clients: serverState.clients || [],
+        users: serverState.users || [],
+        problemTypes: serverState.problemTypes || [],
+        tickets: newTickets,
+        solutions: serverState.solutions || []
+      };
+      this.saveLocalCache(false);
+
+      if (typeof this.onRealtimeUpdateCallback === 'function') {
+        this.onRealtimeUpdateCallback(events);
+      }
+      return { changed: true, events };
+    } catch (_) {
+      // Fallback para sincronização via localStorage quando offline
+      const cached = this.loadLocalCache();
+      const nextSig = this.computeStateSignature(cached);
+      if (nextSig !== this.lastStateSignature) {
+        const events = this.diffTicketChanges(this.state.tickets || [], cached.tickets || []);
+        this.state = cached;
+        this.lastStateSignature = nextSig;
+        if (typeof this.onRealtimeUpdateCallback === 'function') {
+          this.onRealtimeUpdateCallback(events);
+        }
+        return { changed: true, events };
+      }
+      return { changed: false, events: [] };
+    }
   }
 
   // --- AUTENTICAÇÃO E SESSÃO (ADMIN vs TÉCNICO vs USUÁRIO DO CLIENTE) ---

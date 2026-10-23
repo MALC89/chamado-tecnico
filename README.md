@@ -1,6 +1,6 @@
 # 🛠️ ServiceDesk Pro — Sistema de Chamados Técnicos, SLA & Banco de Soluções
 
-![Versão](https://img.shields.io/badge/versão-v1.5.0-4f46e5)
+![Versão](https://img.shields.io/badge/versão-v1.6.0-4f46e5)
 ![Backend](https://img.shields.io/badge/Python_3-SQLite_WAL-10b981)
 ![Licença](https://img.shields.io/badge/uso-Corporativo_/_Contratos_Fixos-f59e0b)
 
@@ -79,7 +79,13 @@ Conecte na sua VPS via SSH e execute:
 git clone https://github.com/MALC89/chamado-tecnico.git /opt/chamado-tecnico && cd /opt/chamado-tecnico && sudo bash install-vps.sh
 ```
 
-### 3. Configurar Domínio Próprio + HTTPS Grátis na VPS
+### 3. Atualizar a VPS com Nova Versão do GitHub
+Sempre que houver nova atualização no GitHub, execute na VPS (mantém o banco `database.db` intacto):
+```bash
+cd /opt/chamado-tecnico && git pull origin main && sudo systemctl restart chamado-tecnico
+```
+
+### 4. Configurar Domínio Próprio + HTTPS Grátis na VPS
 Após apontar um registro DNS Tipo `A` para o IP da sua VPS:
 ```bash
 cd /opt/chamado-tecnico && git pull origin main && sudo bash configurar-dominio.sh chamados.mascti.com.br
@@ -91,6 +97,7 @@ cd /opt/chamado-tecnico && git pull origin main && sudo bash configurar-dominio.
 
 | Versão | Data | Descrição das Entregas |
 | :--- | :--- | :--- |
+| **`v1.6.0`** | Out/2026 | **Sincronização Automática em Tempo Real (Live Sync)**: Atualização automática sem recarregar a página (`F5`) quando o Admin direciona chamados para o Técnico, quando novos chamados são abertos e quando o Técnico finaliza/atualiza o chamado (sincronizando na hora a tela do Admin e do Solicitante). |
 | **`v1.5.0`** | Out/2026 | **Documentação de Apoio em PDF no Banco de Soluções**: Upload de múltiplos arquivos PDF no Banco de Soluções e na finalização do chamado, leitor de PDF integrado em modal, download e versionamento completo do repositório. |
 | **`v1.4.0`** | Out/2026 | **Finalização Técnica & Banco de Soluções**: Campos obrigatórios de *Problema Encontrado* e *Serviço Realizado* ao encerrar chamados, botão *Finalizar Chamado & Salvar Solução*, aba *Banco de Soluções* e reaproveitamento de soluções em 1 clique. |
 | **`v1.3.0`** | Out/2026 | **Multi-Contratos & Senha Obrigatória no 1º Acesso**: Cadastro de múltiplos clientes de contrato fixo, vínculo de contrato no cadastro de usuários, troca de senha obrigatória no primeiro acesso e botão de desbloquear/resetar senha pelo Admin. |

@@ -7,21 +7,186 @@ let activeTicketId = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
   await window.db.initFromServer();
+  window.db.onRealtimeUpdateCallback = handleRealtimeServerUpdate;
   checkAuthAndRender();
 
-  // Atualiza cronômetros de SLA em tempo real a cada 30 segundos
+  // Sincronização automática em tempo real a cada 2.5 segundos (sem precisar atualizar a página manualmente)
+  setInterval(() => {
+    if (window.db.getSession()) {
+      window.db.syncFromServer();
+    }
+  }, 2500);
+
+  // Sincroniza imediatamente sempre que o usuário alternar para a aba do navegador
+  window.addEventListener('focus', () => {
+    if (window.db.getSession()) {
+      window.db.syncFromServer();
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && window.db.getSession()) {
+      window.db.syncFromServer();
+    }
+  });
+
+  // Atualiza cronômetros de SLA em tempo real a cada 20 segundos
   setInterval(() => {
     if (window.db.getSession()) {
       renderTickets();
       updateHeaderAndSidebarStats();
     }
-  }, 30000);
+  }, 20000);
 
   const slaInput = document.getElementById('ticket-sla');
   if (slaInput) {
     slaInput.addEventListener('input', updateDuePreview);
   }
 });
+
+/**
+ * Chamado automaticamente quando outro usuário (Admin, Técnico ou Solicitante)
+ * cria, direciona, interage ou finaliza um chamado no servidor.
+ */
+function handleRealtimeServerUpdate(events = []) {
+  const session = window.db.getSession();
+  if (!session) return;
+
+  const role = session.role || 'USER';
+  const myName = (session.name || '').toLowerCase().trim();
+  const scopedIds = new Set(
+    getScopedTicketsForSession(session, window.db.getTickets()).map((t) => t.id)
+  );
+
+  // Atualiza listagens, contadores, relatórios e banco de soluções automaticamente
+  updateHeaderAndSidebarStats();
+  populateFilterDropdowns();
+  populateTechnicianDatalist();
+  renderTickets();
+  renderDashboard();
+  renderSolutionsBank();
+  if (role === 'ADMIN') {
+    renderUsers();
+    renderProblemTypes();
+    renderClientsList();
+  }
+
+  // Se o modal de detalhes de um chamado estiver aberto na tela, atualiza os dados ao vivo sem fechar o modal
+  if (activeTicketId) {
+    refreshOpenDetailModalLive(activeTicketId);
+  }
+
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+
+  // Exibe notificações automáticas em tempo real conforme o perfil logado
+  const finalizedIds = new Set(
+    events.filter((e) => e.type === 'TICKET_FINALIZED').map((e) => e.ticket.id)
+  );
+
+  events.forEach((ev) => {
+    const t = ev.ticket;
+    if (!t) return;
+
+    if (ev.type === 'NEW_TICKET') {
+      if (role === 'ADMIN') {
+        showToast(`🆕 Novo chamado recebido para triagem: ${t.id} — ${t.title}`);
+      }
+      return;
+    }
+
+    if (ev.type === 'ASSIGNED_TECH') {
+      const assignedLower = (ev.newTechnician || '').toLowerCase().trim();
+      const isAssignedToMe =
+        role === 'TECH' &&
+        ((myName && assignedLower.includes(myName)) || assignedLower === 'fila técnica geral');
+
+      if (isAssignedToMe) {
+        showToast(`🔔 Novo chamado enviado para seu atendimento: ${t.id} — ${t.title}`);
+      } else if (role === 'USER' && t.userId === session.userId) {
+        showToast(`👨‍🔧 Seu chamado ${t.id} foi direcionado para: ${ev.newTechnician}`, 'info');
+      } else if (role === 'ADMIN') {
+        showToast(`🔄 Chamado ${t.id} atribuído para: ${ev.newTechnician}`, 'info');
+      }
+      return;
+    }
+
+    if (ev.type === 'TICKET_FINALIZED') {
+      if (role === 'ADMIN' || scopedIds.has(t.id) || t.userId === session.userId) {
+        showToast(
+          `✅ Chamado ${t.id} (${t.title}) foi finalizado por ${t.technician || 'Técnico'}!`
+        );
+      }
+      return;
+    }
+
+    if (ev.type === 'STATUS_CHANGED' && !finalizedIds.has(t.id)) {
+      if (role === 'ADMIN' || scopedIds.has(t.id) || t.userId === session.userId) {
+        showToast(`🔄 Status do chamado ${t.id} atualizado para: ${ev.newStatus}`, 'info');
+      }
+      return;
+    }
+
+    if (ev.type === 'NEW_NOTE' && !finalizedIds.has(t.id)) {
+      if (role === 'ADMIN' || scopedIds.has(t.id) || t.userId === session.userId) {
+        showToast(`💬 Nova interação no chamado ${t.id} por ${ev.note?.author || 'Equipe'}`, 'info');
+      }
+    }
+  });
+}
+
+/**
+ * Atualiza o modal de detalhes aberto em tempo real sem apagar o que o usuário estiver digitando
+ */
+function refreshOpenDetailModalLive(ticketId) {
+  const ticket = window.db.getTickets().find((t) => t.id === ticketId);
+  if (!ticket) {
+    closeDetailModal();
+    return;
+  }
+
+  const sla = evaluateTicketSla(ticket);
+  const slaBadgeEl = document.getElementById('detail-sla-badge');
+  if (slaBadgeEl) {
+    slaBadgeEl.innerHTML = `
+      <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${sla.badgeClass}">
+        ${sla.label} (SLA: ${ticket.slaHours}h)
+      </span>
+    `;
+  }
+
+  const readonlyBox = document.getElementById('detail-resolution-readonly-box');
+  const roProb = document.getElementById('detail-readonly-problem-found');
+  const roServ = document.getElementById('detail-readonly-service-performed');
+  if (readonlyBox && roProb && roServ) {
+    if (ticket.problemFound || ticket.servicePerformed) {
+      readonlyBox.classList.remove('hidden');
+      roProb.textContent = ticket.problemFound || 'Não informado.';
+      roServ.textContent = ticket.servicePerformed || 'Não informado.';
+    } else {
+      readonlyBox.classList.add('hidden');
+    }
+  }
+
+  const activeEl = document.activeElement;
+  const statusEl = document.getElementById('detail-status');
+  const techEl = document.getElementById('detail-tech');
+  const hoursEl = document.getElementById('detail-hours');
+  const probFoundEl = document.getElementById('detail-problem-found');
+  const servPerfEl = document.getElementById('detail-service-performed');
+
+  if (statusEl && activeEl !== statusEl) statusEl.value = ticket.status;
+  if (techEl && activeEl !== techEl) techEl.value = ticket.technician;
+  if (hoursEl && activeEl !== hoursEl) hoursEl.value = ticket.hoursSpent || 0;
+  if (probFoundEl && activeEl !== probFoundEl && !probFoundEl.value) {
+    probFoundEl.value = ticket.problemFound || '';
+  }
+  if (servPerfEl && activeEl !== servPerfEl && !servPerfEl.value) {
+    servPerfEl.value = ticket.servicePerformed || '';
+  }
+
+  renderTicketNotes(ticket);
+}
 
 // ==========================================
 // AUTENTICAÇÃO E PERMISSÕES (ADMIN vs USUÁRIO)
