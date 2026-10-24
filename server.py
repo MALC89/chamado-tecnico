@@ -161,6 +161,8 @@ def init_db():
             problem_found TEXT DEFAULT '',
             service_performed TEXT DEFAULT '',
             created_at TEXT NOT NULL,
+            assigned_at TEXT,
+            started_at TEXT,
             due_at TEXT NOT NULL,
             resolved_at TEXT,
             notes_json TEXT DEFAULT '[]'
@@ -174,6 +176,10 @@ def init_db():
         cur.execute("ALTER TABLE tickets ADD COLUMN problem_found TEXT DEFAULT '';")
     if "service_performed" not in ticket_cols:
         cur.execute("ALTER TABLE tickets ADD COLUMN service_performed TEXT DEFAULT '';")
+    if "assigned_at" not in ticket_cols:
+        cur.execute("ALTER TABLE tickets ADD COLUMN assigned_at TEXT;")
+    if "started_at" not in ticket_cols:
+        cur.execute("ALTER TABLE tickets ADD COLUMN started_at TEXT;")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS solutions (
@@ -293,6 +299,8 @@ def fetch_full_state():
             "problemFound": (r["problem_found"] if "problem_found" in r.keys() else "") or "",
             "servicePerformed": (r["service_performed"] if "service_performed" in r.keys() else "") or "",
             "createdAt": r["created_at"],
+            "assignedAt": r["assigned_at"] if "assigned_at" in r.keys() else None,
+            "startedAt": r["started_at"] if "started_at" in r.keys() else None,
             "dueAt": r["due_at"],
             "resolvedAt": r["resolved_at"],
             "notes": json.loads(r["notes_json"] or "[]")
@@ -723,12 +731,17 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     if ur and ur["client_id"]:
                         client_id = ur["client_id"]
 
+                tech_val = (body.get("technician") or "Aguardando Direcionamento (Admin)").strip()
+                is_assigned = tech_val.lower() not in ("", "aguardando direcionamento (admin)", "aguardando atribuição", "não atribuído")
+                assigned_at = now.isoformat() if is_assigned else None
+                started_at = None
+
                 cur.execute("""
                     INSERT INTO tickets (
                         id, title, description, user_id, client_id, problem_type_id,
                         sla_hours, priority, status, technician, hours_spent,
-                        created_at, due_at, resolved_at, notes_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, 0, ?, ?, NULL, '[]');
+                        created_at, assigned_at, started_at, due_at, resolved_at, notes_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, 0, ?, ?, ?, ?, NULL, '[]');
                 """, (
                     tid,
                     body["title"].strip(),
@@ -738,8 +751,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     body["problemTypeId"],
                     sla_hours,
                     body.get("priority", "Média"),
-                    (body.get("technician") or "Aguardando Direcionamento (Admin)").strip(),
+                    tech_val,
                     now.isoformat(),
+                    assigned_at,
+                    started_at,
                     due.isoformat()
                 ))
                 conn.commit()
@@ -786,6 +801,26 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     else (row["service_performed"] if "service_performed" in row.keys() and row["service_performed"] else "")
                 )
 
+                # Controle de assigned_at (quando o chamado é direcionado para um técnico)
+                curr_assigned_at = row["assigned_at"] if "assigned_at" in row.keys() else None
+                if "assignedAt" in body:
+                    assigned_at = body.get("assignedAt")
+                elif new_tech != row["technician"] and (new_tech or "").lower().strip() not in ("", "aguardando direcionamento (admin)", "aguardando atribuição", "não atribuído"):
+                    assigned_at = datetime.now(timezone.utc).isoformat()
+                else:
+                    assigned_at = curr_assigned_at
+
+                # Controle de started_at (quando o técnico dá o aceite e inicia o atendimento)
+                curr_started_at = row["started_at"] if "started_at" in row.keys() else None
+                if "startedAt" in body:
+                    started_at = body.get("startedAt")
+                elif new_status == "Em Atendimento" and not curr_started_at:
+                    started_at = datetime.now(timezone.utc).isoformat()
+                elif new_status == "Aberto" and body.get("resetStartedAt"):
+                    started_at = None
+                else:
+                    started_at = curr_started_at
+
                 resolved_at = row["resolved_at"]
                 if new_status == "Resolvido" and row["status"] != "Resolvido":
                     resolved_at = datetime.now(timezone.utc).isoformat()
@@ -806,6 +841,8 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                         hours_spent = ?,
                         problem_found = ?,
                         service_performed = ?,
+                        assigned_at = ?,
+                        started_at = ?,
                         due_at = ?,
                         resolved_at = ?
                     WHERE id = ?;
@@ -822,6 +859,8 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     new_hours,
                     new_prob_found,
                     new_serv_perf,
+                    assigned_at,
+                    started_at,
                     due_at,
                     resolved_at,
                     tid

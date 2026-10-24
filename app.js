@@ -102,11 +102,18 @@ function handleRealtimeServerUpdate(events = []) {
         ((myName && assignedLower.includes(myName)) || assignedLower === 'fila técnica geral');
 
       if (isAssignedToMe) {
-        showToast(`🔔 Novo chamado enviado para seu atendimento: ${t.id} — ${t.title}`);
+        showToast(`🔔 Novo chamado recebido: ${t.id} — ${t.title} (Aguardando seu aceite para iniciar!)`);
       } else if (role === 'USER' && t.userId === session.userId) {
-        showToast(`👨‍🔧 Seu chamado ${t.id} foi direcionado para: ${ev.newTechnician}`, 'info');
+        showToast(`👨‍🔧 Seu chamado ${t.id} foi recebido pela equipe técnica (${ev.newTechnician})`, 'info');
       } else if (role === 'ADMIN') {
-        showToast(`🔄 Chamado ${t.id} atribuído para: ${ev.newTechnician}`, 'info');
+        showToast(`🔄 Chamado ${t.id} direcionado para: ${ev.newTechnician} (Status: Aberto)`, 'info');
+      }
+      return;
+    }
+
+    if (ev.type === 'TICKET_STARTED') {
+      if (role === 'ADMIN' || scopedIds.has(t.id) || t.userId === session.userId) {
+        showToast(`▶️ Atendimento iniciado no chamado ${t.id} por ${t.technician || 'Técnico'}!`);
       }
       return;
     }
@@ -167,6 +174,8 @@ function refreshOpenDetailModalLive(ticketId) {
       readonlyBox.classList.add('hidden');
     }
   }
+
+  updateDetailModalTimelineAndAccept(ticket);
 
   const activeEl = document.activeElement;
   const statusEl = document.getElementById('detail-status');
@@ -479,19 +488,6 @@ async function handleLogin(e) {
     }
   } catch (err) {
     showToast(err.message || 'Credenciais inválidas.', 'error');
-  }
-}
-
-async function handleResetAllPasswordsFromLogin() {
-  try {
-    await window.db.resetAllPasswordsToDefault();
-    document.getElementById('login-identifier').value = 'admin';
-    document.getElementById('login-password').value = 'admin123';
-    showToast(
-      'Senhas resetadas! Admin: "admin" / "admin123" • Usuários: senha "123456". Clique em Acessar Portal!'
-    );
-  } catch (err) {
-    showToast(err.message || 'Erro ao resetar senhas.', 'error');
   }
 }
 
@@ -1179,28 +1175,45 @@ function renderTickets() {
               ${escapeHtml(t.status)}
             </span>
             ${
+              t.status === 'Aberto' && !awaitingTriage
+                ? `<span class="block text-[10px] text-amber-700 font-bold mt-1">⏳ Aguardando Aceite</span>`
+                : t.status === 'Em Atendimento' && t.startedAt
+                ? `<span class="block text-[10px] text-indigo-600 font-medium mt-1">Iniciado: ${formatDateTimeBR(t.startedAt)}</span>`
+                : ''
+            }
+            ${
               t.hoursSpent > 0
-                ? `<p class="text-[11px] text-slate-400 mt-1">${t.hoursSpent}h apontadas</p>`
+                ? `<p class="text-[11px] text-slate-400 mt-0.5">${t.hoursSpent}h apontadas</p>`
                 : ''
             }
           </td>
 
           <td class="py-3.5 px-4 text-right">
-            <button onclick="openDetailModal('${t.id}')" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg ${
-              role === 'ADMIN' && awaitingTriage
-                ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
-                : 'bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700'
-            } text-xs font-semibold transition-colors cursor-pointer">
+            <div class="inline-flex items-center justify-end gap-1.5">
               ${
-                role === 'ADMIN'
-                  ? awaitingTriage
-                    ? 'Direcionar / Atender'
-                    : 'Gerenciar / Editar'
-                  : role === 'TECH'
-                  ? 'Atender'
-                  : 'Acompanhar'
+                (role === 'TECH' || role === 'ADMIN') && t.status === 'Aberto' && !awaitingTriage
+                  ? `<button onclick="handleAcceptAndStartTicket('${t.id}')" title="Aceitar chamado e iniciar atendimento agora" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer">
+                       <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+                       <span>Iniciar</span>
+                     </button>`
+                  : ''
               }
-            </button>
+              <button onclick="openDetailModal('${t.id}')" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg ${
+                role === 'ADMIN' && awaitingTriage
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                  : 'bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700'
+              } text-xs font-semibold transition-colors cursor-pointer">
+                ${
+                  role === 'ADMIN'
+                    ? awaitingTriage
+                      ? 'Direcionar / Atender'
+                      : 'Gerenciar / Editar'
+                    : role === 'TECH'
+                    ? 'Atender'
+                    : 'Acompanhar'
+                }
+              </button>
+            </div>
           </td>
         </tr>
       `;
@@ -1428,10 +1441,25 @@ async function handleCreateTicket(e) {
       title,
       description
     });
+
+    await window.db.addTicketNote(
+      created.id,
+      session?.name || 'Solicitante',
+      `📋 CHAMADO ABERTO NO SISTEMA — Protocolo ${created.id} registrado com SLA de ${created.slaHours}h. Status: Aberto.`
+    );
+
+    if (technician && !isTicketAwaitingAdminTriage({ technician })) {
+      await window.db.addTicketNote(
+        created.id,
+        `${session?.name || 'Administrador'} (Admin)`,
+        `📥 Direcionado para atendimento de: ${technician}. Status mantido como Aberto (aguardando aceite/início do técnico).`
+      );
+    }
+
     closeNewTicketModal();
     refreshAllViews();
     showToast(
-      `Chamado ${created.id} enviado ao Administrador com SLA de ${created.slaHours}h!`
+      `Chamado ${created.id} registrado com sucesso (Status: Aberto)!`
     );
   } catch (err) {
     showToast(err.message || 'Erro ao registrar chamado.', 'error');
@@ -1623,9 +1651,115 @@ function openDetailModal(ticketId) {
     adminForm.classList.add('hidden');
   }
 
+  updateDetailModalTimelineAndAccept(ticket);
   renderTicketNotes(ticket);
   document.getElementById('modal-ticket-detail').classList.remove('hidden');
   if (window.lucide) lucide.createIcons();
+}
+
+/**
+ * Atualiza os marcos da Linha do Tempo e o Card de Aceite do Técnico no modal
+ */
+function updateDetailModalTimelineAndAccept(ticket) {
+  if (!ticket) return;
+  const session = window.db.getSession();
+  const role = session?.role || 'USER';
+  const isAdmin = role === 'ADMIN';
+  const isTech = role === 'TECH';
+  const users = window.db.getUsers();
+  const user = users.find((u) => u.id === ticket.userId) || { name: 'Solicitante' };
+
+  const isAssigned = ticket.technician && !isTicketAwaitingAdminTriage(ticket);
+
+  const stepCreatedDate = document.getElementById('step-created-date');
+  const stepCreatedBy = document.getElementById('step-created-by');
+  const stepAssignedDate = document.getElementById('step-assigned-date');
+  const stepAssignedTech = document.getElementById('step-assigned-tech');
+  const stepStartedDate = document.getElementById('step-started-date');
+  const stepStartedStatus = document.getElementById('step-started-status');
+  const stepResolvedDate = document.getElementById('step-resolved-date');
+  const stepResolvedStatus = document.getElementById('step-resolved-status');
+  const lifecycleBadge = document.getElementById('detail-lifecycle-status-badge');
+
+  if (stepCreatedDate) stepCreatedDate.textContent = formatDateTimeBR(ticket.createdAt);
+  if (stepCreatedBy) stepCreatedBy.textContent = user.name || 'Solicitante';
+
+  if (stepAssignedDate) {
+    stepAssignedDate.textContent = isAssigned ? formatDateTimeBR(ticket.assignedAt || ticket.createdAt) : 'Pendente Triagem';
+  }
+  if (stepAssignedTech) {
+    stepAssignedTech.textContent = isAssigned ? ticket.technician : 'Aguardando Admin';
+  }
+
+  if (stepStartedDate) {
+    stepStartedDate.textContent = ticket.startedAt ? formatDateTimeBR(ticket.startedAt) : '--';
+  }
+  if (stepStartedStatus) {
+    stepStartedStatus.textContent = ticket.startedAt
+      ? 'Atendimento Iniciado'
+      : (isAssigned ? 'Aguardando Aceite' : 'Não Iniciado');
+  }
+
+  if (stepResolvedDate) {
+    stepResolvedDate.textContent = ticket.resolvedAt ? formatDateTimeBR(ticket.resolvedAt) : '--';
+  }
+  if (stepResolvedStatus) {
+    stepResolvedStatus.textContent = ticket.status === 'Resolvido' ? 'Resolvido & Concluído' : 'Pendente';
+  }
+
+  // Estilização das caixas da Linha do Tempo
+  const boxCreated = document.getElementById('step-created-box');
+  const boxAssigned = document.getElementById('step-assigned-box');
+  const boxStarted = document.getElementById('step-started-box');
+  const boxResolved = document.getElementById('step-resolved-box');
+
+  if (boxCreated) boxCreated.className = 'p-3 rounded-lg bg-indigo-50/70 border border-indigo-200';
+  if (boxAssigned) {
+    boxAssigned.className = isAssigned
+      ? 'p-3 rounded-lg bg-amber-50/80 border border-amber-300'
+      : 'p-3 rounded-lg bg-slate-50 border border-slate-200 opacity-60';
+  }
+  if (boxStarted) {
+    boxStarted.className = ticket.startedAt
+      ? 'p-3 rounded-lg bg-emerald-50/80 border border-emerald-300'
+      : 'p-3 rounded-lg bg-slate-50 border border-slate-200 opacity-60';
+  }
+  if (boxResolved) {
+    boxResolved.className = ticket.status === 'Resolvido'
+      ? 'p-3 rounded-lg bg-emerald-100 text-emerald-950 border border-emerald-400 font-bold'
+      : 'p-3 rounded-lg bg-slate-50 border border-slate-200 opacity-60';
+  }
+
+  if (lifecycleBadge) {
+    if (ticket.status === 'Resolvido') {
+      lifecycleBadge.textContent = 'Etapa 4/4: Resolvido';
+      lifecycleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300';
+    } else if (ticket.status === 'Em Atendimento' || ticket.startedAt) {
+      lifecycleBadge.textContent = 'Etapa 3/4: Em Atendimento';
+      lifecycleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300';
+    } else if (isAssigned) {
+      lifecycleBadge.textContent = 'Etapa 2/4: Aguardando Aceite do Técnico';
+      lifecycleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
+    } else {
+      lifecycleBadge.textContent = 'Etapa 1/4: Aberto (Triagem Admin)';
+      lifecycleBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300';
+    }
+  }
+
+  // Painel de Aceite do Técnico: visível quando status é 'Aberto' e já foi direcionado a um técnico ou fila
+  const acceptBox = document.getElementById('detail-tech-accept-box');
+  const acceptMeta = document.getElementById('detail-accept-meta');
+  const canAccept = (isAdmin || isTech) && ticket.status === 'Aberto' && isAssigned;
+  if (acceptBox) {
+    if (canAccept) {
+      acceptBox.classList.remove('hidden');
+      if (acceptMeta) {
+        acceptMeta.innerHTML = `Chamado recebido para: <strong>${escapeHtml(ticket.technician)}</strong> em <strong>${formatDateTimeBR(ticket.assignedAt || ticket.createdAt)}</strong>.<br>Clique no botão ao lado para dar o aceite, registrar o horário de início e passar o status para "Em Atendimento".`;
+      }
+    } else {
+      acceptBox.classList.add('hidden');
+    }
+  }
 }
 
 function applySolutionToTicketForm() {
@@ -1680,21 +1814,25 @@ async function handleAdminSelfAttend() {
   const session = window.db.getSession();
   const adminName = `${session?.name || 'Administrador Geral'} (Admin)`;
   const ticket = window.db.getTickets().find((t) => t.id === activeTicketId);
-  const newStatus = ticket?.status === 'Resolvido' ? 'Resolvido' : 'Em Atendimento';
+  const nowIso = new Date().toISOString();
+
+  // Status permanece como 'Aberto' para que o atendimento seja formalmente iniciado pelo botão Iniciar
+  const newStatus = ticket?.status === 'Resolvido' ? 'Resolvido' : 'Aberto';
 
   await window.db.updateTicket(activeTicketId, {
     technician: adminName,
+    assignedAt: nowIso,
     status: newStatus
   });
   await window.db.addTicketNote(
     activeTicketId,
     adminName,
-    'Administrador assumiu o atendimento direto deste chamado.'
+    `📥 Administrador assumiu a responsabilidade pelo chamado em ${formatDateTimeBR(nowIso)}. Status: Aberto (aguardando aceite/início de atendimento).`
   );
 
   openDetailModal(activeTicketId);
   refreshAllViews();
-  showToast(`Você assumiu o atendimento do chamado ${activeTicketId}!`);
+  showToast(`Chamado ${activeTicketId} atribuído a você (Status: Aberto). Clique em "Iniciar Atendimento" para começar!`);
 }
 
 async function handleAdminAssignToTech() {
@@ -1704,21 +1842,69 @@ async function handleAdminAssignToTech() {
 
   const session = window.db.getSession();
   const ticket = window.db.getTickets().find((t) => t.id === activeTicketId);
-  const newStatus = ticket?.status === 'Aberto' ? 'Em Atendimento' : ticket?.status || 'Em Atendimento';
+  const nowIso = new Date().toISOString();
+
+  // O status permanece como 'Aberto' para que o técnico dê o aceite e inicie o atendimento!
+  const newStatus = ticket?.status === 'Resolvido' ? 'Resolvido' : 'Aberto';
 
   await window.db.updateTicket(activeTicketId, {
     technician: targetTech,
+    assignedAt: nowIso,
     status: newStatus
   });
   await window.db.addTicketNote(
     activeTicketId,
     `${session?.name || 'Administrador'} (Admin)`,
-    `Chamado direcionado pelo Administrador para: ${targetTech}.`
+    `📥 Chamado direcionado pelo Administrador para: ${targetTech} em ${formatDateTimeBR(nowIso)}. Status mantido como Aberto (aguardando aceite e início do atendimento).`
   );
 
   openDetailModal(activeTicketId);
   refreshAllViews();
-  showToast(`Chamado ${activeTicketId} direcionado para ${targetTech}!`);
+  showToast(`Chamado ${activeTicketId} direcionado para ${targetTech} (Status mantido como Aberto)!`);
+}
+
+/**
+ * Aceita o chamado ativo no modal e inicia o atendimento técnico
+ */
+async function handleAcceptAndStartActiveTicket() {
+  if (!activeTicketId) return;
+  await handleAcceptAndStartTicket(activeTicketId);
+}
+
+/**
+ * Aceita o chamado e registra o início oficial do atendimento técnico
+ */
+async function handleAcceptAndStartTicket(ticketId) {
+  const session = window.db.getSession();
+  if (!session) return;
+  const ticket = window.db.getTickets().find((t) => t.id === ticketId);
+  if (!ticket) return;
+
+  const nowIso = new Date().toISOString();
+  let assignedTech = ticket.technician;
+  if (!assignedTech || isTicketAwaitingAdminTriage(ticket) || assignedTech === 'Fila Técnica Geral') {
+    assignedTech = session.name || 'Técnico Responsável';
+  }
+
+  await window.db.updateTicket(ticketId, {
+    status: 'Em Atendimento',
+    technician: assignedTech,
+    startedAt: nowIso
+  });
+
+  const roleTag = session.role === 'ADMIN' ? 'Admin' : 'Técnico';
+  const author = `${session.name || assignedTech} (${roleTag})`;
+  await window.db.addTicketNote(
+    ticketId,
+    author,
+    `▶️ ACEITE TÉCNICO & INÍCIO DE ATENDIMENTO — Atendimento iniciado oficialmente em ${formatDateTimeBR(nowIso)}.`
+  );
+
+  if (activeTicketId === ticketId) {
+    openDetailModal(ticketId);
+  }
+  refreshAllViews();
+  showToast(`✅ Chamado ${ticketId} aceito! Atendimento iniciado e status alterado para Em Atendimento.`);
 }
 
 function renderTicketNotes(ticket) {
@@ -3070,6 +3256,8 @@ function exportTicketsCSV() {
     'Tecnico_Responsavel',
     'Horas_Trabalhadas',
     'Aberto_Em',
+    'Recebido_Tecnico_Em',
+    'Inicio_Atendimento_Em',
     'Vencimento_SLA',
     'Resolvido_Em'
   ];
@@ -3093,6 +3281,8 @@ function exportTicketsCSV() {
       `"${(t.technician || '').replace(/"/g, '""')}"`,
       t.hoursSpent || 0,
       formatDateTimeBR(t.createdAt),
+      formatDateTimeBR(t.assignedAt),
+      formatDateTimeBR(t.startedAt),
       formatDateTimeBR(t.dueAt),
       formatDateTimeBR(t.resolvedAt)
     ].join(';');

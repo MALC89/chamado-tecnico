@@ -80,6 +80,8 @@ class DatabaseService {
       t.priority,
       t.slaHours,
       t.title,
+      t.assignedAt || '',
+      t.startedAt || '',
       (t.notes || []).length
     ]);
     const solutionsPart = (st.solutions || []).map((s) => [
@@ -108,6 +110,12 @@ class DatabaseService {
           ticket: next,
           previousTechnician: prev.technician,
           newTechnician: next.technician
+        });
+      }
+      if (!prev.startedAt && next.startedAt) {
+        events.push({
+          type: 'TICKET_STARTED',
+          ticket: next
         });
       }
       if (prev.status !== 'Resolvido' && next.status === 'Resolvido') {
@@ -736,6 +744,7 @@ class DatabaseService {
     const now = new Date();
     const dueAt = new Date(now.getTime() + payload.slaHours * 3600000);
     const nextNum = 1001 + this.state.tickets.length;
+    const isTechAssigned = payload.technician && !['', 'aguardando direcionamento (admin)', 'aguardando atribuição', 'não atribuído'].includes(payload.technician.toLowerCase().trim());
 
     const newTicket = {
       id: `CH-${nextNum}`,
@@ -745,6 +754,8 @@ class DatabaseService {
       problemFound: '',
       servicePerformed: '',
       createdAt: now.toISOString(),
+      assignedAt: isTechAssigned ? now.toISOString() : null,
+      startedAt: null,
       dueAt: dueAt.toISOString(),
       resolvedAt: null,
       notes: []
@@ -778,6 +789,16 @@ class DatabaseService {
     if (updates.slaHours !== undefined && Number(updates.slaHours) !== Number(current.slaHours)) {
       const createdDate = new Date(current.createdAt);
       updated.dueAt = new Date(createdDate.getTime() + Number(updates.slaHours) * 3600000).toISOString();
+    }
+
+    if (updates.technician && updates.technician !== current.technician && !['', 'aguardando direcionamento (admin)', 'aguardando atribuição', 'não atribuído'].includes(updates.technician.toLowerCase().trim())) {
+      if (!updated.assignedAt) {
+        updated.assignedAt = new Date().toISOString();
+      }
+    }
+
+    if (updates.status === 'Em Atendimento' && !current.startedAt && !updated.startedAt) {
+      updated.startedAt = new Date().toISOString();
     }
 
     if (updates.status === 'Resolvido' && current.status !== 'Resolvido') {
@@ -1065,6 +1086,8 @@ CREATE TABLE tickets (
   problem_found TEXT DEFAULT '',
   service_performed TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW(),
+  assigned_at TIMESTAMPTZ,
+  started_at TIMESTAMPTZ,
   due_at TIMESTAMPTZ NOT NULL,
   resolved_at TIMESTAMPTZ,
   notes JSONB DEFAULT '[]'::jsonb

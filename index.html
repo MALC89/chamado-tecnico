@@ -99,14 +99,10 @@
           <i data-lucide="arrow-right" class="w-4 h-4"></i>
         </button>
 
-        <div class="pt-3 border-t border-slate-100 flex flex-col items-center gap-2">
-          <button
-            type="button"
-            onclick="handleResetAllPasswordsFromLogin()"
-            class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-          >
-            Esqueceu a senha? Resetar Senhas Padrão (Admin e Usuários)
-          </button>
+        <div class="pt-3 border-t border-slate-100 flex flex-col items-center gap-1.5 text-center">
+          <p class="text-xs text-slate-500">
+            Esqueceu sua senha? Solicite o desbloqueio ao <strong class="text-slate-700">Administrador</strong> do sistema.
+          </p>
           <div id="login-support-footer" class="text-center text-[11px] text-slate-400">
             Acesso restrito a colaboradores autorizados e equipe técnica.
           </div>
@@ -1534,6 +1530,59 @@
           </div>
         </div>
 
+        <!-- Linha do Tempo / Histórico do Ciclo de Vida do Chamado -->
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h4 class="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+              <i data-lucide="history" class="w-3.5 h-3.5 text-indigo-600"></i>
+              Histórico & Ciclo de Vida do Chamado
+            </h4>
+            <span id="detail-lifecycle-status-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold"></span>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 text-xs" id="detail-timeline-steps">
+            <!-- Etapa 1: Abertura -->
+            <div class="p-3 rounded-lg bg-white border border-slate-200" id="step-created-box">
+              <div class="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold uppercase">
+                <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-indigo-600"></i>
+                <span>1. Abertura</span>
+              </div>
+              <p class="font-bold text-slate-800 text-xs mt-1" id="step-created-date">--</p>
+              <p class="text-[10px] text-slate-400 mt-0.5" id="step-created-by">Por Solicitante</p>
+            </div>
+
+            <!-- Etapa 2: Recebido / Fila -->
+            <div class="p-3 rounded-lg bg-white border border-slate-200" id="step-assigned-box">
+              <div class="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold uppercase">
+                <i data-lucide="inbox" class="w-3.5 h-3.5 text-amber-600"></i>
+                <span>2. Recebido</span>
+              </div>
+              <p class="font-bold text-slate-800 text-xs mt-1" id="step-assigned-date">--</p>
+              <p class="text-[10px] text-slate-400 mt-0.5" id="step-assigned-tech">Fila Técnica</p>
+            </div>
+
+            <!-- Etapa 3: Início de Atendimento -->
+            <div class="p-3 rounded-lg bg-white border border-slate-200" id="step-started-box">
+              <div class="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold uppercase">
+                <i data-lucide="play-circle" class="w-3.5 h-3.5 text-emerald-600"></i>
+                <span>3. Início</span>
+              </div>
+              <p class="font-bold text-slate-800 text-xs mt-1" id="step-started-date">--</p>
+              <p class="text-[10px] text-slate-400 mt-0.5" id="step-started-status">Aguardando Aceite</p>
+            </div>
+
+            <!-- Etapa 4: Resolução -->
+            <div class="p-3 rounded-lg bg-white border border-slate-200" id="step-resolved-box">
+              <div class="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold uppercase">
+                <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-slate-400"></i>
+                <span>4. Conclusão</span>
+              </div>
+              <p class="font-bold text-slate-800 text-xs mt-1" id="step-resolved-date">--</p>
+              <p class="text-[10px] text-slate-400 mt-0.5" id="step-resolved-status">Pendente</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Descrição (Modo Leitura) -->
         <div id="detail-readonly-box">
           <h4 class="text-xs font-semibold uppercase text-slate-400 mb-1">Descrição do Problema (<span id="detail-problem-name" class="text-indigo-600"></span>)</h4>
@@ -1659,6 +1708,34 @@
             </button>
           </div>
         </form>
+
+        <!-- Painel de Aceite e Início do Atendimento pelo Técnico -->
+        <div id="detail-tech-accept-box" class="hidden p-4 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border border-emerald-300 shadow-xs space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-emerald-600/30">
+                <i data-lucide="play" class="w-5 h-5 fill-current"></i>
+              </div>
+              <div>
+                <h4 class="text-sm font-bold text-emerald-950 flex items-center gap-2">
+                  <span>Aceite do Técnico Pendente</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">Status: Aberto</span>
+                </h4>
+                <p id="detail-accept-meta" class="text-xs text-emerald-800 mt-0.5">
+                  Este chamado foi recebido para seu atendimento. Clique no botão ao lado para dar o aceite, registrar o horário e iniciar o atendimento (o status passará para "Em Atendimento").
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onclick="handleAcceptAndStartActiveTicket()"
+              class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/25 flex items-center gap-2 transition-all cursor-pointer hover:scale-[1.02]"
+            >
+              <i data-lucide="play-circle" class="w-4 h-4"></i>
+              <span>Aceitar Chamado & Iniciar Atendimento</span>
+            </button>
+          </div>
+        </div>
 
         <!-- Execução e Finalização do Atendimento (Técnico & Admin): Problema Encontrado, Serviço Realizado e Finalizar Chamado -->
         <form id="detail-admin-form" onsubmit="handleUpdateTicketDetail(event)" class="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-3.5">

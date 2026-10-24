@@ -1,10 +1,10 @@
 # 🛠️ ServiceDesk Pro — Sistema de Chamados Técnicos, SLA & Banco de Soluções
 
-![Versão](https://img.shields.io/badge/versão-v1.6.0-4f46e5)
+![Versão](https://img.shields.io/badge/versão-v1.7.0-4f46e5)
 ![Backend](https://img.shields.io/badge/Python_3-SQLite_WAL-10b981)
 ![Licença](https://img.shields.io/badge/uso-Corporativo_/_Contratos_Fixos-f59e0b)
 
-Sistema web completo de **Gestão de Chamados Técnicos (Help Desk / Service Desk)**, **Controle de SLA em Tempo Real**, **Gestão de Múltiplos Clientes de Contrato Fixo** e **Banco de Soluções com Documentação em PDF**.
+Sistema web completo de **Gestão de Chamados Técnicos (Help Desk / Service Desk)**, **Controle de SLA em Tempo Real**, **Gestão de Múltiplos Clientes de Contrato Fixo**, **Aceite e Histórico de Início de Atendimento** e **Banco de Soluções com Documentação em PDF**.
 
 ---
 
@@ -18,19 +18,22 @@ Sistema web completo de **Gestão de Chamados Técnicos (Help Desk / Service Des
 ### 2. Hierarquia de Acesso em 3 Níveis (`ADMIN`, `TECH`, `USER`)
 - **Administrador (`ADMIN`)**:
   - Recebe todos os chamados abertos na **Central de Triagem** para direcionar a um técnico ou assumir o atendimento diretamente (**"Atender Eu Mesmo"**).
+  - Ao direcionar o chamado para um técnico, o status **permanece como `Aberto`** e registra o momento exato em que o técnico recebeu no sistema (`assignedAt`).
   - Edição completa de qualquer chamado (solicitante, contrato, tipo de problema, prazo de SLA, título e descrição).
   - Gerenciamento completo de usuários: cadastro, edição, vínculo de contrato, bloqueio de acesso, desbloqueio/redefinição de senha e exclusão.
   - **Relatório Gerencial Completo** (visão consolidada ou filtrada por cliente de contrato).
 - **Técnico de Suporte (`TECH`)**:
-  - Visualiza e atende os chamados direcionados a ele pelo Administrador (ou liberados na Fila Técnica Geral).
+  - Visualiza os chamados direcionados a ele com status `Aberto • ⏳ Aguardando Aceite`.
+  - **Aceite & Início de Atendimento**: Botão em destaque **`▶️ Aceitar Chamado & Iniciar Atendimento`** (na lista e no modal) que registra a data/hora oficial de início (`startedAt`), muda o status para `Em Atendimento` e gera o registro histórico.
   - Aponta horas trabalhadas, registra o **Problema Encontrado** e o **Serviço Realizado**, finaliza chamados e alimenta/consulta o **Banco de Soluções**.
   - Acessa seu **Relatório de Desempenho Técnico & Cumprimento de SLA**.
 - **Usuário Comum / Solicitante (`USER`)**:
   - Abre chamados técnicos com cálculo automático do prazo de SLA conforme o catálogo contratual.
-  - Acompanha em tempo real o cronômetro de SLA, interações e o laudo técnico dos seus próprios chamados.
+  - Acompanha em tempo real a linha do tempo de 4 etapas: Abertura (`createdAt`), Recebido (`assignedAt`), Início do Atendimento (`startedAt`) e Resolução (`resolvedAt`).
   - Acessa seu **Relatório Individual de Chamados**.
 
 ### 3. Segurança & Personalização Visual
+- **Tela de Login Segura**: Remoção do reset público de senhas na tela de login; o desbloqueio/redefinição de senha é exclusivo do perfil Administrador dentro do painel seguro.
 - **Troca de Senha Obrigatória no 1º Acesso**: Todo novo usuário (ou usuário cuja senha foi redefinida/desbloqueada pelo Administrador) é direcionado automaticamente para cadastrar uma senha pessoal no primeiro login.
 - **Identidade Visual Customizável**: Upload da logo da sua empresa de TI/Suporte exibida na tela de login e no menu lateral.
 - **Perfil do Usuário**: Todos os perfis podem alterar sua foto de perfil, trocar a senha e escolher entre **7 temas de cores** (*Índigo, Azul Oceano, Esmeralda, Roxo Real, Rubi, Laranja Âmbar e Grafite*).
@@ -97,6 +100,7 @@ cd /opt/chamado-tecnico && git pull origin main && sudo bash configurar-dominio.
 
 | Versão | Data | Descrição das Entregas |
 | :--- | :--- | :--- |
+| **`v1.7.0`** | Out/2026 | **Aceite do Técnico, Início de Atendimento & Segurança de Login**: Chamados direcionados mantêm status `Aberto` até aceite do técnico; novo botão e painel `Iniciar Atendimento`; registro dos timestamps `assignedAt` e `startedAt` com linha do tempo de 4 etapas; remoção do reset público de senhas na tela de login (apenas Administrador no painel). |
 | **`v1.6.0`** | Out/2026 | **Sincronização Automática em Tempo Real (Live Sync)**: Atualização automática sem recarregar a página (`F5`) quando o Admin direciona chamados para o Técnico, quando novos chamados são abertos e quando o Técnico finaliza/atualiza o chamado (sincronizando na hora a tela do Admin e do Solicitante). |
 | **`v1.5.0`** | Out/2026 | **Documentação de Apoio em PDF no Banco de Soluções**: Upload de múltiplos arquivos PDF no Banco de Soluções e na finalização do chamado, leitor de PDF integrado em modal, download e versionamento completo do repositório. |
 | **`v1.4.0`** | Out/2026 | **Finalização Técnica & Banco de Soluções**: Campos obrigatórios de *Problema Encontrado* e *Serviço Realizado* ao encerrar chamados, botão *Finalizar Chamado & Salvar Solução*, aba *Banco de Soluções* e reaproveitamento de soluções em 1 clique. |
