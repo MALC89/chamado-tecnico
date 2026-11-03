@@ -24,7 +24,10 @@ const EMPTY_DATA = {
     loginSubtitle: 'Portal de Chamados Técnicos & Controle de SLA',
     supportContact: '',
     adminAvatar: '',
-    themeColor: 'indigo'
+    themeColor: 'indigo',
+    businessHoursStart: '08:00',
+    businessHoursEnd: '18:00',
+    businessDays: '1,2,3,4,5'
   },
   cloudConfig: {
     provider: 'sqlite', // 'sqlite' | 'supabase' | 'rest_postgres'
@@ -35,6 +38,7 @@ const EMPTY_DATA = {
   },
   clients: [],
   users: [],
+  equipment: [],
   problemTypes: [],
   tickets: [],
   solutions: []
@@ -47,6 +51,9 @@ class DatabaseService {
     this.state = this.loadLocalCache();
     if (!Array.isArray(this.state.clients)) {
       this.state.clients = [];
+    }
+    if (!Array.isArray(this.state.equipment)) {
+      this.state.equipment = [];
     }
     if (!Array.isArray(this.state.solutions)) {
       this.state.solutions = [];
@@ -79,10 +86,20 @@ class DatabaseService {
       t.servicePerformed || '',
       t.priority,
       t.slaHours,
+      t.equipmentId || '',
+      t.firstResponseDueAt || '',
+      t.firstRespondedAt || '',
       t.title,
       t.assignedAt || '',
       t.startedAt || '',
       (t.notes || []).length
+    ]);
+    const equipmentPart = (st.equipment || []).map((e) => [
+      e.id,
+      e.serialNumber,
+      e.name,
+      e.type,
+      e.clientId
     ]);
     const solutionsPart = (st.solutions || []).map((s) => [
       s.id,
@@ -91,7 +108,7 @@ class DatabaseService {
     ]);
     const usersPart = (st.users || []).map((u) => [u.id, u.name, u.isBlocked, u.accessRole, u.clientId]);
     const clientsPart = (st.clients || []).map((c) => [c.id, c.name, c.monthlyHoursQuota, c.status]);
-    return JSON.stringify({ ticketsPart, solutionsPart, usersPart, clientsPart });
+    return JSON.stringify({ ticketsPart, equipmentPart, solutionsPart, usersPart, clientsPart });
   }
 
   diffTicketChanges(oldTickets, newTickets) {
@@ -181,6 +198,7 @@ class DatabaseService {
           contract: { ...this.state.contract, ...serverState.contract },
           clients: serverState.clients || [],
           users: serverState.users || [],
+          equipment: serverState.equipment || [],
           problemTypes: serverState.problemTypes || [],
           tickets: serverState.tickets || [],
           solutions: serverState.solutions || []
@@ -216,6 +234,7 @@ class DatabaseService {
         contract: { ...this.state.contract, ...serverState.contract },
         clients: serverState.clients || [],
         users: serverState.users || [],
+        equipment: serverState.equipment || [],
         problemTypes: serverState.problemTypes || [],
         tickets: newTickets,
         solutions: serverState.solutions || []
@@ -707,6 +726,162 @@ class DatabaseService {
     this.saveLocalCache();
   }
 
+  // --- AUXILIAR: CÁLCULO DE VENCIMENTO EM HORÁRIO COMERCIAL / EXPEDIENTE ÚTIL ---
+  calculateBusinessDue(startDate, slaHours, config = null) {
+    const contract = config || this.state.contract || {};
+    const startStr = contract.businessHoursStart || '08:00';
+    const endStr = contract.businessHoursEnd || '18:00';
+    const daysStr = contract.businessDays || '1,2,3,4,5';
+
+    let sh = 8, sm = 0, eh = 18, em = 0;
+    try {
+      const [pSh, pSm] = startStr.split(':').map(Number);
+      const [pEh, pEm] = endStr.split(':').map(Number);
+      if (!isNaN(pSh)) { sh = pSh; sm = pSm || 0; }
+      if (!isNaN(pEh)) { eh = pEh; em = pEm || 0; }
+    } catch (_) {}
+
+    const allowedDays = daysStr.split(',').map((x) => Number(x.trim())).filter((x) => !isNaN(x) && x >= 1 && x <= 7);
+    const validDays = allowedDays.length > 0 ? allowedDays : [1, 2, 3, 4, 5];
+
+    let curr = new Date(startDate);
+    let remainingMinutes = Math.round(Number(slaHours) * 60);
+    const maxSteps = 60 * 24 * 60;
+    let step = 0;
+
+    while (remainingMinutes > 0 && step < maxSteps) {
+      // 1=Segunda, ..., 7=Domingo
+      const jsDay = curr.getDay(); // 0=Dom, 1=Seg, ..., 6=Sab
+      const isoDay = jsDay === 0 ? 7 : jsDay;
+      const currMin = curr.getHours() * 60 + curr.getMinutes();
+      const openMin = sh * 60 + sm;
+      const closeMin = eh * 60 + em;
+
+      if (validDays.includes(isoDay) && currMin >= openMin && currMin < closeMin) {
+        const availToday = closeMin - currMin;
+        const take = Math.min(remainingMinutes, availToday);
+        curr = new Date(curr.getTime() + take * 60000);
+        remainingMinutes -= take;
+        step += take;
+      } else {
+        if (validDays.includes(isoDay) && currMin < openMin) {
+          curr.setHours(sh, sm, 0, 0);
+        } else {
+          curr.setDate(curr.getDate() + 1);
+          curr.setHours(sh, sm, 0, 0);
+        }
+        step += 1;
+      }
+    }
+    return curr;
+  }
+
+  // --- INVENTÁRIO DE EQUIPAMENTOS (COM DEDUPLICAÇÃO POR NÚMERO DE SÉRIE) ---
+  getEquipments() {
+    return Array.isArray(this.state.equipment)
+      ? [...this.state.equipment].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      : [];
+  }
+
+  getEquipmentById(id) {
+    if (!id || !Array.isArray(this.state.equipment)) return null;
+    return this.state.equipment.find((e) => e.id === id) || null;
+  }
+
+  getEquipmentBySerial(serial) {
+    if (!serial || !Array.isArray(this.state.equipment)) return null;
+    const clean = serial.trim().toUpperCase();
+    return this.state.equipment.find((e) => (e.serialNumber || '').trim().toUpperCase() === clean) || null;
+  }
+
+  async addEquipment(equipData) {
+    const cleanSerial = (equipData.serialNumber || '').trim().toUpperCase();
+    const payload = {
+      name: (equipData.name || '').trim(),
+      type: (equipData.type || 'Desktop').trim(),
+      serialNumber: cleanSerial,
+      clientId: (equipData.clientId || '').trim(),
+      userId: (equipData.userId || '').trim(),
+      notes: (equipData.notes || '').trim()
+    };
+
+    if (this.sqliteConnected) {
+      const res = await fetch('/api/equipment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const out = await res.json();
+        this.state = { ...this.state, ...out.state };
+        this.saveLocalCache();
+        return this.state.equipment.find((e) => e.id === out.equipmentId) || this.state.equipment[0];
+      }
+    }
+
+    if (!Array.isArray(this.state.equipment)) this.state.equipment = [];
+
+    // Deduplicação no fallback local
+    const existing = this.getEquipmentBySerial(cleanSerial);
+    if (existing) {
+      if (payload.name) existing.name = payload.name;
+      if (payload.type) existing.type = payload.type;
+      if (payload.clientId) existing.clientId = payload.clientId;
+      if (payload.userId) existing.userId = payload.userId;
+      if (payload.notes) existing.notes = payload.notes;
+      this.saveLocalCache();
+      return existing;
+    }
+
+    const newEquip = {
+      id: 'eq-' + Date.now().toString(36),
+      ...payload,
+      createdAt: new Date().toISOString()
+    };
+    this.state.equipment.unshift(newEquip);
+    this.saveLocalCache();
+    return newEquip;
+  }
+
+  async updateEquipment(id, updates) {
+    if (this.sqliteConnected) {
+      const res = await fetch('/api/equipment/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updates })
+      });
+      if (res.ok) {
+        const out = await res.json();
+        this.state = { ...this.state, ...out.state };
+        this.saveLocalCache();
+        return this.state.equipment.find((e) => e.id === id);
+      }
+    }
+
+    if (!Array.isArray(this.state.equipment)) return null;
+    const idx = this.state.equipment.findIndex((e) => e.id === id);
+    if (idx === -1) return null;
+    this.state.equipment[idx] = { ...this.state.equipment[idx], ...updates };
+    this.saveLocalCache();
+    return this.state.equipment[idx];
+  }
+
+  async deleteEquipment(id) {
+    if (this.sqliteConnected) {
+      const res = await fetch(`/api/equipment/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        const out = await res.json();
+        this.state = { ...this.state, ...out.state };
+        this.saveLocalCache();
+        return;
+      }
+    }
+    if (Array.isArray(this.state.equipment)) {
+      this.state.equipment = this.state.equipment.filter((e) => e.id !== id);
+    }
+    this.saveLocalCache();
+  }
+
   // --- CHAMADOS ---
   getTickets() {
     return [...this.state.tickets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -721,8 +896,11 @@ class DatabaseService {
       description: ticketData.description.trim(),
       userId: ticketData.userId,
       clientId: resolvedClientId,
+      equipmentId: (ticketData.equipmentId || '').trim(),
+      newEquipment: ticketData.newEquipment || null,
       problemTypeId: ticketData.problemTypeId,
       slaHours: Number(ticketData.slaHours) || 4,
+      firstResponseSlaHours: Number(ticketData.firstResponseSlaHours) || 1.0,
       priority: ticketData.priority || 'Média',
       technician: ticketData.technician?.trim() || 'Aguardando Direcionamento (Admin)'
     };
@@ -742,13 +920,21 @@ class DatabaseService {
     }
 
     const now = new Date();
-    const dueAt = new Date(now.getTime() + payload.slaHours * 3600000);
+    let eqId = payload.equipmentId;
+    if (payload.newEquipment && payload.newEquipment.serialNumber) {
+      const addedEquip = await this.addEquipment(payload.newEquipment);
+      if (addedEquip) eqId = addedEquip.id;
+    }
+
+    const dueAt = this.calculateBusinessDue(now, payload.slaHours);
+    const firstResponseDueAt = this.calculateBusinessDue(now, payload.firstResponseSlaHours);
     const nextNum = 1001 + this.state.tickets.length;
     const isTechAssigned = payload.technician && !['', 'aguardando direcionamento (admin)', 'aguardando atribuição', 'não atribuído'].includes(payload.technician.toLowerCase().trim());
 
     const newTicket = {
       id: `CH-${nextNum}`,
       ...payload,
+      equipmentId: eqId,
       status: 'Aberto',
       hoursSpent: 0,
       problemFound: '',
@@ -756,6 +942,8 @@ class DatabaseService {
       createdAt: now.toISOString(),
       assignedAt: isTechAssigned ? now.toISOString() : null,
       startedAt: null,
+      firstResponseDueAt: firstResponseDueAt.toISOString(),
+      firstRespondedAt: null,
       dueAt: dueAt.toISOString(),
       resolvedAt: null,
       notes: []
@@ -788,7 +976,7 @@ class DatabaseService {
 
     if (updates.slaHours !== undefined && Number(updates.slaHours) !== Number(current.slaHours)) {
       const createdDate = new Date(current.createdAt);
-      updated.dueAt = new Date(createdDate.getTime() + Number(updates.slaHours) * 3600000).toISOString();
+      updated.dueAt = this.calculateBusinessDue(createdDate, Number(updates.slaHours)).toISOString();
     }
 
     if (updates.technician && updates.technician !== current.technician && !['', 'aguardando direcionamento (admin)', 'aguardando atribuição', 'não atribuído'].includes(updates.technician.toLowerCase().trim())) {
@@ -799,6 +987,9 @@ class DatabaseService {
 
     if (updates.status === 'Em Atendimento' && !current.startedAt && !updated.startedAt) {
       updated.startedAt = new Date().toISOString();
+      if (!updated.firstRespondedAt) {
+        updated.firstRespondedAt = updated.startedAt;
+      }
     }
 
     if (updates.status === 'Resolvido' && current.status !== 'Resolvido') {
@@ -829,6 +1020,14 @@ class DatabaseService {
         technician: updated.technician || 'Equipe Técnica',
         hoursSpent: Number(updated.hoursSpent) || 0,
         attachments: mergedAtts,
+        createdAt: updated.resolvedAt || new Date().toISOString()
+      };
+      if (existingIdx >= 0) {
+        this.state.solutions[existingIdx] = solRecord;
+      } else {
+        this.state.solutions.unshift(solRecord);
+      }
+    }
         createdAt: updated.resolvedAt || new Date().toISOString()
       };
       if (existingIdx >= 0) {

@@ -539,6 +539,7 @@ function refreshAllViews() {
   renderTickets();
   renderDashboard();
   renderSolutionsBank();
+  renderInventory();
   renderUsers();
   renderProblemTypes();
   loadSettingsForms();
@@ -563,11 +564,11 @@ function switchTab(tabName) {
     tabName = 'profile';
   }
 
-  // Técnico tem acesso a Chamados, Relatórios, Banco de Soluções e Perfil; Usuário Comum tem acesso a Chamados, Relatórios e Perfil
+  // Técnico e Admin têm acesso a Inventário e Banco de Soluções; Usuário Comum pode visualizar chamados, relatórios, inventário e perfil
   const allowedTabsForRole =
     role === 'TECH'
-      ? ['tickets', 'dashboard', 'solutions', 'profile']
-      : ['tickets', 'dashboard', 'profile'];
+      ? ['tickets', 'dashboard', 'solutions', 'inventory', 'profile']
+      : ['tickets', 'dashboard', 'inventory', 'profile'];
   if (role !== 'ADMIN' && !allowedTabsForRole.includes(tabName)) {
     showToast('Acesso restrito ao perfil Administrador.', 'error');
     return;
@@ -621,6 +622,10 @@ function switchTab(tabName) {
       'Banco de Soluções Técnicas (Base de Conhecimento)',
       'Histórico de problemas encontrados e serviços realizados nos atendimentos finalizados para consulta rápida da equipe'
     ],
+    inventory: [
+      'Inventário de Equipamentos TI & Histórico de Ativos',
+      'Gestão de Desktops, Notebooks, Servidores e Redes com histórico correlacionado de atendimentos'
+    ],
     users: [
       'Gerenciamento de Usuários, Contratos, Senhas & Bloqueios',
       'Vincule o contrato de cada usuário, edite dados, desbloqueie/redefina senhas, bloqueie acessos e exclua'
@@ -652,13 +657,94 @@ function switchTab(tabName) {
 }
 
 // ==========================================
-// CÁLCULO DE SLA E FORMATAÇÃO DE TEMPO
+// CÁLCULO DE SLA, EXPEDIENTE COMERCIAL & FORMATAÇÃO DE TEMPO
 // ==========================================
+function isCurrentTimeInBusinessHours(contract = null) {
+  const cfg = contract || window.db.getContract() || {};
+  const startStr = cfg.businessHoursStart || '08:00';
+  const endStr = cfg.businessHoursEnd || '18:00';
+  const daysStr = cfg.businessDays || '1,2,3,4,5';
+
+  let sh = 8, sm = 0, eh = 18, em = 0;
+  try {
+    const [pSh, pSm] = startStr.split(':').map(Number);
+    const [pEh, pEm] = endStr.split(':').map(Number);
+    if (!isNaN(pSh)) { sh = pSh; sm = pSm || 0; }
+    if (!isNaN(pEh)) { eh = pEh; em = pEm || 0; }
+  } catch (_) {}
+
+  const allowedDays = daysStr.split(',').map((x) => Number(x.trim())).filter((x) => !isNaN(x) && x >= 1 && x <= 7);
+  const validDays = allowedDays.length > 0 ? allowedDays : [1, 2, 3, 4, 5];
+
+  const now = new Date();
+  const jsDay = now.getDay();
+  const isoDay = jsDay === 0 ? 7 : jsDay;
+  const currMin = now.getHours() * 60 + now.getMinutes();
+  const openMin = sh * 60 + sm;
+  const closeMin = eh * 60 + em;
+
+  const isOpen = validDays.includes(isoDay) && currMin >= openMin && currMin < closeMin;
+  return {
+    isOpen,
+    startStr,
+    endStr,
+    daysStr
+  };
+}
+
 function evaluateTicketSla(ticket) {
   const now = new Date();
   const created = new Date(ticket.createdAt);
   const due = new Date(ticket.dueAt);
+  const contract = window.db.getContract();
+  const bhStatus = isCurrentTimeInBusinessHours(contract);
 
+  // 1. SLA DE PRIMEIRA RESPOSTA (Aceite pelo Técnico ou Início do Atendimento)
+  let firstResponseResult = null;
+  const firstRespDue = ticket.firstResponseDueAt
+    ? new Date(ticket.firstResponseDueAt)
+    : new Date(created.getTime() + (Number(ticket.firstResponseSlaHours) || 1.0) * 3600000);
+  const respondedAtStr = ticket.firstRespondedAt || ticket.startedAt;
+
+  if (respondedAtStr) {
+    const respondedDt = new Date(respondedAtStr);
+    const met = respondedDt <= firstRespDue;
+    const diffMinutes = Math.max(1, Math.round((respondedDt - created) / 60000));
+    firstResponseResult = {
+      status: met ? 'MET' : 'MISSED',
+      label: met ? `1ª Resposta em ${formatDurationMinutes(diffMinutes)} (No SLA)` : `1ª Resposta em ${formatDurationMinutes(diffMinutes)} (Fora do SLA)`,
+      badgeClass: met ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-800 border-amber-300',
+      metSla: met
+    };
+  } else if (ticket.status === 'Resolvido') {
+    firstResponseResult = {
+      status: 'MET',
+      label: '1ª Resposta Concluída',
+      badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+      metSla: true
+    };
+  } else {
+    const diffRespMs = firstRespDue - now;
+    if (diffRespMs < 0) {
+      const overdueMin = Math.abs(Math.round(diffRespMs / 60000));
+      firstResponseResult = {
+        status: 'EXPIRED',
+        label: `1ª Resposta Pendente (Atrasada -${formatDurationMinutes(overdueMin)})`,
+        badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse',
+        metSla: false
+      };
+    } else {
+      const leftMin = Math.round(diffRespMs / 60000);
+      firstResponseResult = {
+        status: 'PENDING',
+        label: `1ª Resposta em até ${formatDurationMinutes(leftMin)}`,
+        badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+        metSla: true
+      };
+    }
+  }
+
+  // 2. SLA DE RESOLUÇÃO FINAL
   if (ticket.status === 'Resolvido') {
     const resolved = ticket.resolvedAt ? new Date(ticket.resolvedAt) : now;
     const metSla = resolved <= due;
@@ -670,13 +756,16 @@ function evaluateTicketSla(ticket) {
         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
         : 'bg-amber-50 text-amber-700 border-amber-200',
       icon: metSla ? 'check-circle' : 'alert-circle',
-      metSla
+      metSla,
+      firstResponse: firstResponseResult,
+      isPausedOutsideHours: false
     };
   }
 
   const diffMs = due - now;
-  const totalSlaMs = ticket.slaHours * 3600000;
+  const totalSlaMs = (Number(ticket.slaHours) || 4) * 3600000;
   const remainingRatio = diffMs / totalSlaMs;
+  const isPaused = !bhStatus.isOpen;
 
   if (diffMs < 0) {
     const overdueMin = Math.abs(Math.round(diffMs / 60000));
@@ -685,7 +774,9 @@ function evaluateTicketSla(ticket) {
       label: `SLA Estourado (-${formatDurationMinutes(overdueMin)})`,
       badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 sla-badge-expired',
       icon: 'flame',
-      metSla: false
+      metSla: false,
+      firstResponse: firstResponseResult,
+      isPausedOutsideHours: isPaused
     };
   }
 
@@ -693,19 +784,23 @@ function evaluateTicketSla(ticket) {
   if (remainingRatio <= 0.25 || leftMin <= 45) {
     return {
       code: 'WARNING',
-      label: `Vence em ${formatDurationMinutes(leftMin)}`,
+      label: isPaused ? `Vence em ${formatDurationMinutes(leftMin)} (Expediente Pausado)` : `Vence em ${formatDurationMinutes(leftMin)}`,
       badgeClass: 'bg-amber-100 text-amber-800 border-amber-300',
       icon: 'clock-alert',
-      metSla: true
+      metSla: true,
+      firstResponse: firstResponseResult,
+      isPausedOutsideHours: isPaused
     };
   }
 
   return {
     code: 'OK',
-    label: `No prazo (${formatDurationMinutes(leftMin)} restantes)`,
+    label: isPaused ? `No prazo (${formatDurationMinutes(leftMin)} restantes • Fora do Expediente)` : `No prazo (${formatDurationMinutes(leftMin)} restantes)`,
     badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     icon: 'clock',
-    metSla: true
+    metSla: true,
+    firstResponse: firstResponseResult,
+    isPausedOutsideHours: isPaused
   };
 }
 
@@ -852,6 +947,11 @@ function updateHeaderAndSidebarStats() {
   const badgeSolutions = document.getElementById('badge-solutions-count');
   if (badgeSolutions) {
     badgeSolutions.textContent = window.db.getSolutions().length;
+  }
+
+  const badgeInventory = document.getElementById('badge-inventory-count');
+  if (badgeInventory) {
+    badgeInventory.textContent = window.db.getEquipments().length;
   }
 
   document.getElementById('kpi-open-count').textContent = openTickets.length;
@@ -1224,8 +1324,51 @@ function renderTickets() {
 }
 
 // ==========================================
-// MODAL: NOVO CHAMADO TÉCNICO (DIRECIONADO AO ADMIN + VÍNCULO DE CLIENTE)
+// MODAL: NOVO CHAMADO TÉCNICO (COM EQUIPAMENTO + SLA EM HORÁRIO COMERCIAL)
 // ==========================================
+let isTicketEquipCreateMode = false;
+
+function toggleNewTicketEquipMode() {
+  isTicketEquipCreateMode = !isTicketEquipCreateMode;
+  const selectBox = document.getElementById('ticket-equip-select-box');
+  const createBox = document.getElementById('ticket-equip-create-box');
+  const btn = document.getElementById('btn-toggle-equip-mode');
+
+  if (isTicketEquipCreateMode) {
+    selectBox?.classList.add('hidden');
+    createBox?.classList.remove('hidden');
+    if (btn) btn.textContent = '← Selecionar do Inventário existente';
+  } else {
+    selectBox?.classList.remove('hidden');
+    createBox?.classList.add('hidden');
+    if (btn) btn.textContent = '+ Cadastrar novo equipamento';
+  }
+}
+
+function populateTicketEquipmentSelect() {
+  const select = document.getElementById('ticket-equipment-select');
+  if (!select) return;
+
+  const equipments = window.db.getEquipments();
+  const selectedUserId = document.getElementById('ticket-user')?.value;
+  const selectedClientId = document.getElementById('ticket-client')?.value;
+
+  let filtered = equipments;
+  if (selectedClientId) {
+    filtered = equipments.filter((e) => !e.clientId || e.clientId === selectedClientId);
+  }
+
+  select.innerHTML =
+    `<option value="">Nenhum equipamento vinculado (Não se aplica / Serviço geral)</option>` +
+    filtered
+      .map((e) => {
+        const userObj = e.userId ? window.db.getUsers().find((u) => u.id === e.userId) : null;
+        const userTag = userObj ? ` • ${userObj.name}` : '';
+        return `<option value="${e.id}">${escapeHtml(e.name)} — SN: ${escapeHtml(e.serialNumber)} (${escapeHtml(e.type)}${userTag})</option>`;
+      })
+      .join('');
+}
+
 function openNewTicketModal() {
   const session = window.db.getSession();
   if (isSessionForcedPasswordChange(session)) {
@@ -1249,6 +1392,14 @@ function openNewTicketModal() {
     }
     return;
   }
+
+  isTicketEquipCreateMode = false;
+  const selectBox = document.getElementById('ticket-equip-select-box');
+  const createBox = document.getElementById('ticket-equip-create-box');
+  const btnToggle = document.getElementById('btn-toggle-equip-mode');
+  if (selectBox) selectBox.classList.remove('hidden');
+  if (createBox) createBox.classList.add('hidden');
+  if (btnToggle) btnToggle.textContent = '+ Cadastrar novo equipamento';
 
   const userSelect = document.getElementById('ticket-user');
   if (isAdmin || isTech) {
@@ -1298,20 +1449,30 @@ function openNewTicketModal() {
   probSelect.innerHTML = problems
     .map(
       (p) =>
-        `<option value="${p.id}">${escapeHtml(p.name)} (SLA Contratual: ${p.defaultSlaHours}h)</option>`
+        `<option value="${p.id}">${escapeHtml(p.name)} (SLA Resolução: ${p.defaultSlaHours}h • 1ª Resp: ${p.firstResponseSlaHours || 1}h)</option>`
     )
     .join('');
 
-  // Admin pode ajustar o SLA e já escolher direcionar ou atender; Usuário envia para Triagem do Admin
+  // Admin pode ajustar os SLAs e direcionamento
   document.getElementById('ticket-sla').readOnly = !isAdmin;
+  const firstSlaInput = document.getElementById('ticket-first-response-sla');
+  if (firstSlaInput) firstSlaInput.readOnly = !isAdmin;
+
   document.getElementById('ticket-tech-wrapper').style.display = isAdmin ? 'block' : 'none';
   document.getElementById('ticket-tech').value = 'Aguardando Direcionamento (Admin)';
 
   document.getElementById('ticket-title').value = '';
   document.getElementById('ticket-desc').value = '';
 
+  const newEqName = document.getElementById('ticket-new-equip-name');
+  const newEqSerial = document.getElementById('ticket-new-equip-serial');
+  if (newEqName) newEqName.value = '';
+  if (newEqSerial) newEqSerial.value = '';
+
+  populateTicketEquipmentSelect();
   onProblemTypeChange();
   document.getElementById('modal-new-ticket').classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
 }
 
 function onTicketUserChange() {
@@ -1326,6 +1487,7 @@ function onTicketUserChange() {
   } else {
     clientSelect.value = '';
   }
+  populateTicketEquipmentSelect();
 }
 
 function closeNewTicketModal() {
@@ -1338,17 +1500,36 @@ function onProblemTypeChange() {
   const selected = problems.find((p) => p.id === probId);
   if (selected) {
     document.getElementById('ticket-sla').value = selected.defaultSlaHours;
+    const firstSlaEl = document.getElementById('ticket-first-response-sla');
+    if (firstSlaEl) firstSlaEl.value = selected.firstResponseSlaHours || 1;
     document.getElementById('ticket-priority').value = selected.priority;
   }
-  updateDuePreview();
+  updateTicketDuePreview();
+}
+
+function updateTicketDuePreview() {
+  const slaHours = Number(document.getElementById('ticket-sla')?.value) || 4;
+  const firstSlaHours = Number(document.getElementById('ticket-first-response-sla')?.value) || 1;
+  const contract = window.db.getContract() || {};
+  const now = new Date();
+
+  const dueFinal = window.db.calculateBusinessDue(now, slaHours, contract);
+  const dueFirst = window.db.calculateBusinessDue(now, firstSlaHours, contract);
+
+  const finalEl = document.getElementById('ticket-due-preview');
+  const firstEl = document.getElementById('ticket-first-due-preview');
+  const bhEl = document.getElementById('ticket-preview-business-hours');
+
+  if (finalEl) finalEl.textContent = formatDateTimeBR(dueFinal.toISOString());
+  if (firstEl) firstEl.textContent = formatDateTimeBR(dueFirst.toISOString());
+  if (bhEl) {
+    const daysLabel = (contract.businessDays || '1,2,3,4,5') === '1,2,3,4,5,6' ? 'Seg a Sáb' : (contract.businessDays || '').length > 10 ? 'Todos os dias' : 'Seg a Sex';
+    bhEl.textContent = `${contract.businessHoursStart || '08:00'} às ${contract.businessHoursEnd || '18:00'} (${daysLabel})`;
+  }
 }
 
 function updateDuePreview() {
-  const slaHours = Number(document.getElementById('ticket-sla').value) || 4;
-  const due = new Date(Date.now() + slaHours * 3600000);
-  document.getElementById('ticket-due-preview').textContent = `${formatDateTimeBR(
-    due.toISOString()
-  )} (${slaHours}h corridas)`;
+  updateTicketDuePreview();
 }
 
 function toggleQuickUserForm() {
@@ -1412,7 +1593,29 @@ async function handleCreateTicket(e) {
   const clientId = document.getElementById('ticket-client')?.value || '';
   const problemTypeId = document.getElementById('ticket-problem').value;
   const slaHours = Number(document.getElementById('ticket-sla').value);
+  const firstResponseSlaHours = Number(document.getElementById('ticket-first-response-sla')?.value) || 1.0;
   const priority = document.getElementById('ticket-priority').value;
+
+  // Equipamento: selecionado ou cadastrado
+  let equipmentId = '';
+  let newEquipment = null;
+  if (isTicketEquipCreateMode) {
+    const eqSerial = (document.getElementById('ticket-new-equip-serial')?.value || '').trim().toUpperCase();
+    const eqName = (document.getElementById('ticket-new-equip-name')?.value || '').trim();
+    const eqType = document.getElementById('ticket-new-equip-type')?.value || 'Desktop';
+    if (eqSerial) {
+      newEquipment = {
+        name: eqName || `${eqType} ${eqSerial}`,
+        type: eqType,
+        serialNumber: eqSerial,
+        clientId,
+        userId
+      };
+    }
+  } else {
+    equipmentId = (document.getElementById('ticket-equipment-select')?.value || '').trim();
+  }
+
   // Todos os chamados abertos por usuários ou técnicos vão para o Administrador direcionar ou atender
   const technician =
     role === 'ADMIN'
@@ -1434,18 +1637,25 @@ async function handleCreateTicket(e) {
     const created = await window.db.addTicket({
       userId,
       clientId,
+      equipmentId,
+      newEquipment,
       problemTypeId,
       slaHours,
+      firstResponseSlaHours,
       priority,
       technician,
       title,
       description
     });
 
+    const equipNote = created.equipmentId
+      ? ` • Equipamento vinculado: [${created.equipmentId}]`
+      : '';
+
     await window.db.addTicketNote(
       created.id,
       session?.name || 'Solicitante',
-      `📋 CHAMADO ABERTO NO SISTEMA — Protocolo ${created.id} registrado com SLA de ${created.slaHours}h. Status: Aberto.`
+      `📋 CHAMADO ABERTO NO SISTEMA — Protocolo ${created.id} registrado com SLA de Resolução de ${created.slaHours}h e SLA de 1ª Resposta de ${created.firstResponseSlaHours || 1}h (em horário útil)${equipNote}. Status: Aberto.`
     );
 
     if (technician && !isTicketAwaitingAdminTriage({ technician })) {
@@ -1482,6 +1692,7 @@ function openDetailModal(ticketId) {
   const users = window.db.getUsers();
   const clients = window.db.getClients();
   const problems = window.db.getProblemTypes();
+  const contract = window.db.getContract() || {};
 
   const user = users.find((u) => u.id === ticket.userId) || {
     name: 'Usuário não encontrado',
@@ -1508,14 +1719,63 @@ function openDetailModal(ticketId) {
     user.phone ? ' • ' + user.phone : ''
   }`;
 
-  document.getElementById('detail-sla-badge').innerHTML = `
-    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${sla.badgeClass}">
-      ${sla.label} (SLA: ${ticket.slaHours}h)
-    </span>
-  `;
+  // Equipamento Vinculado no Modal
+  const equipObj = ticket.equipmentId ? window.db.getEquipmentById(ticket.equipmentId) : null;
+  const equipContainer = document.getElementById('detail-equip-container');
+  const btnViewHistory = document.getElementById('btn-view-ticket-equip-history');
+  if (equipContainer) {
+    if (equipObj) {
+      equipContainer.innerHTML = `
+        <div class="p-2 rounded-lg bg-white border border-slate-200">
+          <div class="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+            <i data-lucide="cpu" class="w-3.5 h-3.5 text-indigo-600"></i>
+            <span>${escapeHtml(equipObj.name)}</span>
+          </div>
+          <div class="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
+            <span class="px-1.5 py-0.2 bg-slate-100 rounded font-mono text-[10px] text-slate-700 font-bold">${escapeHtml(equipObj.serialNumber)}</span>
+            <span>• ${escapeHtml(equipObj.type)}</span>
+          </div>
+        </div>
+      `;
+      if (btnViewHistory) btnViewHistory.classList.remove('hidden');
+    } else {
+      equipContainer.innerHTML = `<span class="text-xs text-slate-400">Nenhum equipamento vinculado</span>`;
+      if (btnViewHistory) btnViewHistory.classList.add('hidden');
+    }
+  }
+
+  // SLAs Duplos (1ª Resposta e Resolução)
+  const slaBadgeEl = document.getElementById('detail-sla-badge');
+  if (slaBadgeEl) {
+    slaBadgeEl.innerHTML = `
+      <div class="space-y-1">
+        <div class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${sla.firstResponse.badgeClass}">
+          <i data-lucide="play" class="w-3 h-3"></i>
+          <span>${escapeHtml(sla.firstResponse.label)}</span>
+        </div>
+        <div class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${sla.badgeClass}">
+          <i data-lucide="${sla.icon || 'clock'}" class="w-3 h-3"></i>
+          <span>Resolução: ${escapeHtml(sla.label)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  const bhBadge = document.getElementById('detail-business-hours-badge');
+  if (bhBadge) {
+    const bhStatus = isCurrentTimeInBusinessHours(contract);
+    if (bhStatus.isOpen) {
+      bhBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800';
+      bhBadge.textContent = 'Expediente Ativo';
+    } else {
+      bhBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
+      bhBadge.textContent = 'Fora do Expediente (Pausado)';
+    }
+  }
+
   document.getElementById('detail-dates').textContent = `Aberto: ${formatDateTimeBR(
     ticket.createdAt
-  )} | Prazo SLA: ${formatDateTimeBR(ticket.dueAt)}`;
+  )} | Limite Resolução: ${formatDateTimeBR(ticket.dueAt)}`;
 
   document.getElementById('detail-problem-name').textContent = `${problem.name} — ${problem.category}`;
   document.getElementById('detail-desc').textContent = ticket.description;
@@ -1618,26 +1878,173 @@ function openDetailModal(ticketId) {
     if (ticketPdfInput) ticketPdfInput.value = '';
     renderPendingTicketSolutionPdfs();
 
-    // Popula seletor rápido de soluções do Banco de Soluções para reaproveitar diagnóstico/serviço
-    const solPicker = document.getElementById('detail-solution-picker');
-    if (solPicker) {
-      const allSolutions = window.db.getSolutions();
-      // Prioriza soluções da mesma categoria de problema
-      const sortedSolutions = [...allSolutions].sort((a, b) => {
-        const aMatch = a.problemTypeId === ticket.problemTypeId ? 1 : 0;
-        const bMatch = b.problemTypeId === ticket.problemTypeId ? 1 : 0;
-        return bMatch - aMatch;
-      });
-      solPicker.innerHTML =
-        `<option value="">Consultar / Aplicar solução do Banco (${allSolutions.length})...</option>` +
-        sortedSolutions
-          .map((s) => {
-            const sameTypeTag = s.problemTypeId === ticket.problemTypeId ? '★ Recomendada • ' : '';
-            const protoTag = s.ticketId ? `[${s.ticketId}] ` : '';
-            return `<option value="${s.id}">${escapeHtml(sameTypeTag + protoTag + s.title)}</option>`;
-          })
-          .join('');
+    // Renderiza a correlação inteligente de soluções anteriores
+    renderCorrelatedSolutions(ticket);
+
+    // Técnico não pode alterar o responsável para outro técnico se não for Admin
+    document.getElementById('detail-tech').readOnly = !isAdmin;
+
+    // Apenas Admin pode excluir chamados
+    if (deleteBtn) {
+      if (isAdmin) deleteBtn.classList.remove('hidden');
+      else deleteBtn.classList.add('hidden');
     }
+  } else {
+    adminForm.classList.add('hidden');
+  }
+
+  updateDetailModalTimelineAndAccept(ticket);
+  renderTicketNotes(ticket);
+  document.getElementById('modal-ticket-detail').classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function handleViewActiveTicketEquipHistory() {
+  const tickets = window.db.getTickets();
+  const ticket = tickets.find((t) => t.id === activeTicketId);
+  if (ticket && ticket.equipmentId) {
+    openEquipmentHistory(ticket.equipmentId);
+  }
+}
+
+// ==========================================
+// CORRELAÇÃO INTELIGENTE DE SOLUÇÕES & ATENDIMENTOS ANTERIORES
+// ==========================================
+let activeCorrelatedMatches = [];
+
+function renderCorrelatedSolutions(ticket) {
+  const container = document.getElementById('detail-correlated-list');
+  const countBadge = document.getElementById('detail-correlated-count-badge');
+  if (!container || !countBadge) return;
+
+  const allSolutions = window.db.getSolutions();
+  const allTickets = window.db.getTickets();
+  const equipObj = ticket.equipmentId ? window.db.getEquipmentById(ticket.equipmentId) : null;
+
+  const matches = [];
+
+  // 1. Busca chamados anteriores finalizados com laudo
+  allTickets.forEach((t) => {
+    if (t.id === ticket.id) return;
+    if (t.status !== 'Resolvido') return;
+    if (!t.problemFound && !t.servicePerformed) return;
+
+    let correlationType = null;
+    let badgeLabel = '';
+
+    if (ticket.equipmentId && t.equipmentId === ticket.equipmentId) {
+      correlationType = 'EQUIPMENT';
+      badgeLabel = `Mesmo Ativo (${equipObj?.serialNumber || 'SN'})`;
+    } else if (t.problemTypeId === ticket.problemTypeId) {
+      correlationType = 'PROBLEM_TYPE';
+      badgeLabel = 'Mesmo Problema';
+    }
+
+    if (correlationType) {
+      matches.push({
+        ticketId: t.id,
+        title: t.title,
+        problemFound: t.problemFound,
+        servicePerformed: t.servicePerformed,
+        technician: t.technician,
+        resolvedAt: t.resolvedAt || t.createdAt,
+        type: correlationType,
+        badgeLabel
+      });
+    }
+  });
+
+  // 2. Busca no banco de soluções catalogadas
+  allSolutions.forEach((s) => {
+    if (s.ticketId === ticket.id) return;
+    if (matches.some((m) => m.ticketId === s.ticketId)) return;
+    if (s.problemTypeId === ticket.problemTypeId) {
+      matches.push({
+        ticketId: s.ticketId || '',
+        title: s.title,
+        problemFound: s.problemFound,
+        servicePerformed: s.servicePerformed,
+        technician: s.technician,
+        resolvedAt: s.createdAt,
+        type: 'PROBLEM_TYPE',
+        badgeLabel: 'Solução Catalogada'
+      });
+    }
+  });
+
+  // Prioriza soluções do mesmo equipamento
+  matches.sort((a, b) => {
+    if (a.type === 'EQUIPMENT' && b.type !== 'EQUIPMENT') return -1;
+    if (b.type === 'EQUIPMENT' && a.type !== 'EQUIPMENT') return 1;
+    return new Date(b.resolvedAt) - new Date(a.resolvedAt);
+  });
+
+  activeCorrelatedMatches = matches;
+
+  if (matches.length === 0) {
+    countBadge.textContent = 'Sem histórico anterior';
+    countBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200';
+    container.innerHTML = `
+      <div class="p-3 bg-white/80 rounded-lg border border-slate-200 text-slate-500 text-center">
+        <p class="text-xs">Nenhum atendimento anterior registrado para este equipamento ou categoria de problema.</p>
+        <p class="text-[11px] text-slate-400 mt-0.5">Ao concluir este atendimento, o diagnóstico e serviço serão automaticamente correlacionados para os próximos chamados.</p>
+      </div>
+    `;
+    return;
+  }
+
+  countBadge.textContent = `${matches.length} correlacionado(s)`;
+  countBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
+
+  container.innerHTML = matches.slice(0, 3).map((m, idx) => `
+    <div class="p-3 rounded-xl bg-white border border-amber-200 shadow-2xs space-y-2">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            m.type === 'EQUIPMENT' ? 'bg-purple-100 text-purple-900 border border-purple-200' : 'bg-sky-100 text-sky-900 border border-sky-200'
+          }">
+            ${escapeHtml(m.badgeLabel)}
+          </span>
+          <span class="font-bold text-slate-800">${m.ticketId ? escapeHtml(m.ticketId) + ' — ' : ''}${escapeHtml(m.title)}</span>
+        </div>
+        <button
+          type="button"
+          onclick="applyCorrelatedSolutionToActiveTicket(${idx})"
+          class="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition-colors cursor-pointer shadow-xs"
+        >
+          Copiar Laudo para o Chamado
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+        <div class="p-2 rounded-lg bg-amber-50/70 border border-amber-100">
+          <span class="font-bold text-amber-950 block text-[10px] uppercase">Problema Encontrado:</span>
+          <p class="text-slate-700 mt-0.5 whitespace-pre-line">${escapeHtml(m.problemFound || 'Não informado')}</p>
+        </div>
+        <div class="p-2 rounded-lg bg-emerald-50/70 border border-emerald-100">
+          <span class="font-bold text-emerald-950 block text-[10px] uppercase">Serviço Realizado:</span>
+          <p class="text-slate-700 mt-0.5 whitespace-pre-line">${escapeHtml(m.servicePerformed || 'Não informado')}</p>
+        </div>
+      </div>
+      <div class="text-[10px] text-slate-400">
+        Atendido por <strong>${escapeHtml(m.technician || 'Equipe Técnica')}</strong> em ${formatDateTimeBR(m.resolvedAt)}
+      </div>
+    </div>
+  `).join('');
+}
+
+function applyCorrelatedSolutionToActiveTicket(idx) {
+  if (!activeCorrelatedMatches || !activeCorrelatedMatches[idx]) return;
+  const item = activeCorrelatedMatches[idx];
+
+  const probEl = document.getElementById('detail-problem-found');
+  const servEl = document.getElementById('detail-service-performed');
+
+  if (probEl) probEl.value = item.problemFound || '';
+  if (servEl) servEl.value = item.servicePerformed || '';
+
+  showToast(`Laudo anterior copiado para os campos de Diagnóstico e Serviço!`, 'success');
+}
 
     // Técnico não pode alterar o responsável para outro técnico se não for Admin
     document.getElementById('detail-tech').readOnly = !isAdmin;
@@ -3327,7 +3734,39 @@ function loadSettingsForms() {
   pendingLogoDataUrl = c.companyLogo || '';
   updateSettingsLogoPreview(pendingLogoDataUrl);
 
+  // Campos de Horário de Expediente / Atendimento (SLA Útil)
+  const bhStartInput = document.getElementById('cfg-bh-start');
+  const bhEndInput = document.getElementById('cfg-bh-end');
+  const bhDaysInput = document.getElementById('cfg-bh-days');
+  const bhBadgeLabel = document.getElementById('business-hours-badge-label');
+  if (bhStartInput) bhStartInput.value = c.businessHoursStart || '08:00';
+  if (bhEndInput) bhEndInput.value = c.businessHoursEnd || '18:00';
+  if (bhDaysInput) bhDaysInput.value = c.businessDays || '1,2,3,4,5';
+  if (bhBadgeLabel) {
+    const daysLabel = (c.businessDays || '1,2,3,4,5') === '1,2,3,4,5,6' ? 'Seg a Sáb' : (c.businessDays || '').length > 10 ? 'Todos os dias' : 'Seg a Sex';
+    bhBadgeLabel.textContent = `Expediente: ${c.businessHoursStart || '08:00'} às ${c.businessHoursEnd || '18:00'} (${daysLabel})`;
+  }
+
   renderClientsList();
+}
+
+async function handleSaveBusinessHours(e) {
+  e.preventDefault();
+  const start = document.getElementById('cfg-bh-start')?.value || '08:00';
+  const end = document.getElementById('cfg-bh-end')?.value || '18:00';
+  const days = document.getElementById('cfg-bh-days')?.value || '1,2,3,4,5';
+
+  try {
+    await window.db.updateContract({
+      businessHoursStart: start,
+      businessHoursEnd: end,
+      businessDays: days
+    });
+    refreshAllViews();
+    showToast('Regras de horário de expediente e cálculo de SLA atualizadas com sucesso!');
+  } catch (err) {
+    showToast(err.message || 'Erro ao salvar horário de atendimento.', 'error');
+  }
 }
 
 function renderClientsList() {
@@ -3784,6 +4223,521 @@ async function handleChangeMyPassword(e) {
     showToast(err.message, 'error');
   }
 }
+
+// ==========================================
+// ABA: INVENTÁRIO DE EQUIPAMENTOS & ATIVOS DE TI
+// ==========================================
+
+function getEquipmentTypeIcon(type) {
+  const map = {
+    'Desktop': 'monitor',
+    'Notebook': 'laptop',
+    'Servidor': 'server',
+    'Impressora': 'printer',
+    'Roteador / Switch': 'network',
+    'Nobreak': 'zap',
+    'Monitor': 'tv',
+    'Outro': 'hard-drive'
+  };
+  return map[type] || 'cpu';
+}
+
+function renderInventory() {
+  const invTableBody = document.getElementById('inv-table-body');
+  if (!invTableBody) return;
+
+  const equipments = window.db.getEquipments ? window.db.getEquipments() : [];
+  const tickets = window.db.getTickets ? window.db.getTickets() : [];
+  const clients = window.db.getClients ? window.db.getClients() : [];
+  const users = window.db.getUsers ? window.db.getUsers() : [];
+
+  const clientMap = Object.fromEntries(clients.map((c) => [c.id, c.name]));
+  const userMap = Object.fromEntries(users.map((u) => [u.id, u.name]));
+
+  // Mapa de chamados por equipamento
+  const ticketsByEquipId = {};
+  const activeTicketsByEquipId = {};
+  for (const t of tickets) {
+    if (t.equipmentId) {
+      ticketsByEquipId[t.equipmentId] = (ticketsByEquipId[t.equipmentId] || 0) + 1;
+      if (t.status !== 'FECHADO' && t.status !== 'RESOLVIDO') {
+        activeTicketsByEquipId[t.equipmentId] = (activeTicketsByEquipId[t.equipmentId] || 0) + 1;
+      }
+    }
+  }
+
+  // Atualiza KPIs do Inventário
+  const kpiTotal = document.getElementById('inv-kpi-total');
+  const kpiWorkstations = document.getElementById('inv-kpi-workstations');
+  const kpiServers = document.getElementById('inv-kpi-servers');
+  const kpiWithTickets = document.getElementById('inv-kpi-with-tickets');
+
+  if (kpiTotal) kpiTotal.textContent = equipments.length;
+  if (kpiWorkstations) {
+    const workstationsCount = equipments.filter(
+      (e) => e.type === 'Desktop' || e.type === 'Notebook'
+    ).length;
+    kpiWorkstations.textContent = workstationsCount;
+  }
+  if (kpiServers) {
+    const serversCount = equipments.filter(
+      (e) => e.type === 'Servidor' || e.type === 'Roteador / Switch'
+    ).length;
+    kpiServers.textContent = serversCount;
+  }
+  if (kpiWithTickets) {
+    const withTicketsCount = Object.keys(activeTicketsByEquipId).length;
+    kpiWithTickets.textContent = withTicketsCount;
+  }
+
+  // Preenche filtro de clientes mantendo a seleção atual
+  const clientFilter = document.getElementById('inv-filter-client');
+  if (clientFilter) {
+    const currentVal = clientFilter.value;
+    const clientOptions = ['<option value="ALL">Todas as Empresas Clientes</option>'];
+    for (const cli of clients) {
+      clientOptions.push(`<option value="${cli.id}">${escapeHtml(cli.name)}</option>`);
+    }
+    clientFilter.innerHTML = clientOptions.join('');
+    if (currentVal && clients.some((c) => c.id === currentVal)) {
+      clientFilter.value = currentVal;
+    }
+  }
+
+  // Aplica filtros de pesquisa, tipo e cliente
+  const searchInput = document.getElementById('inv-filter-search');
+  const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
+  const selectedType = document.getElementById('inv-filter-type')?.value || 'ALL';
+  const selectedClient = document.getElementById('inv-filter-client')?.value || 'ALL';
+
+  const filtered = equipments.filter((eq) => {
+    if (selectedType !== 'ALL' && eq.type !== selectedType) {
+      return false;
+    }
+    if (selectedClient !== 'ALL' && eq.clientId !== selectedClient) {
+      return false;
+    }
+    if (query) {
+      const cName = (clientMap[eq.clientId] || '').toLowerCase();
+      const uName = (userMap[eq.userId] || '').toLowerCase();
+      const eqName = (eq.name || '').toLowerCase();
+      const eqSerial = (eq.serialNumber || '').toLowerCase();
+      const eqType = (eq.type || '').toLowerCase();
+      const eqNotes = (eq.notes || '').toLowerCase();
+      const match =
+        eqName.includes(query) ||
+        eqSerial.includes(query) ||
+        eqType.includes(query) ||
+        cName.includes(query) ||
+        uName.includes(query) ||
+        eqNotes.includes(query);
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  const subtitle = document.getElementById('inv-table-subtitle');
+  if (subtitle) {
+    subtitle.textContent = `${filtered.length} equipamento(s) listado(s)`;
+  }
+
+  const session = window.db.getSession();
+  const isAdmin = session?.role === 'ADMIN';
+
+  if (filtered.length === 0) {
+    invTableBody.innerHTML = `
+      <tr>
+        <td colspan="7" class="py-12 text-center text-slate-400">
+          <div class="flex flex-col items-center justify-center gap-2">
+            <i data-lucide="cpu" class="w-10 h-10 text-slate-300"></i>
+            <p class="text-sm font-medium text-slate-600">Nenhum equipamento encontrado no inventário.</p>
+            <p class="text-xs text-slate-400">Cadastre novos equipamentos ou ajuste os filtros acima.</p>
+            <button
+              onclick="openNewEquipmentModal()"
+              class="mt-2 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-semibold hover:bg-indigo-100 transition-colors"
+            >
+              + Adicionar Primeiro Ativo
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  invTableBody.innerHTML = filtered
+    .map((eq) => {
+      const iconName = getEquipmentTypeIcon(eq.type);
+      const totalTickets = ticketsByEquipId[eq.id] || 0;
+      const activeTickets = activeTicketsByEquipId[eq.id] || 0;
+      const clientName = clientMap[eq.clientId] || 'Geral / Sem Cliente';
+      const userName = userMap[eq.userId] || 'Não atribuído';
+      const dateFormatted = eq.createdAt ? new Date(eq.createdAt).toLocaleDateString('pt-BR') : '--';
+
+      const activeBadge =
+        activeTickets > 0
+          ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 ml-1.5 animate-pulse">
+               ${activeTickets} aberto(s)
+             </span>`
+          : '';
+
+      return `
+        <tr class="hover:bg-slate-50 transition-colors border-b border-slate-100">
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                <i data-lucide="${iconName}" class="w-4 h-4 text-indigo-600"></i>
+              </div>
+              <div>
+                <strong class="text-slate-900 block font-semibold text-xs leading-snug">${escapeHtml(eq.name)}</strong>
+                <span class="text-[11px] text-slate-500 font-medium">${escapeHtml(eq.type)}</span>
+              </div>
+            </div>
+          </td>
+          <td class="py-3 px-4 font-mono text-xs font-semibold text-indigo-700">
+            <span class="bg-indigo-50 px-2 py-1 rounded border border-indigo-100 inline-flex items-center gap-1">
+              <i data-lucide="tag" class="w-3 h-3 text-indigo-500"></i>
+              ${escapeHtml(eq.serialNumber || 'S/N')}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-xs text-slate-600">
+            <span class="font-medium text-slate-800">${escapeHtml(clientName)}</span>
+          </td>
+          <td class="py-3 px-4 text-xs text-slate-600">
+            <span>${escapeHtml(userName)}</span>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <button
+              onclick="openEquipmentHistory('${eq.id}')"
+              class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 transition-colors cursor-pointer border border-slate-200"
+              title="Visualizar histórico completo de chamados deste equipamento"
+            >
+              <i data-lucide="history" class="w-3.5 h-3.5"></i>
+              <span>${totalTickets} chamado(s)</span>
+              ${activeBadge}
+            </button>
+          </td>
+          <td class="py-3 px-4 text-xs text-slate-500">
+            ${dateFormatted}
+          </td>
+          <td class="py-3 px-4 text-right">
+            <div class="flex items-center justify-end gap-1.5">
+              <button
+                onclick="openEquipmentHistory('${eq.id}')"
+                class="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Histórico de Chamados"
+              >
+                <i data-lucide="history" class="w-4 h-4"></i>
+              </button>
+              <button
+                onclick="editEquipment('${eq.id}')"
+                class="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Editar Equipamento"
+              >
+                <i data-lucide="edit-3" class="w-4 h-4"></i>
+              </button>
+              ${
+                isAdmin
+                  ? `<button
+                      onclick="deleteEquipmentConfirm('${eq.id}')"
+                      class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                      title="Excluir do Inventário"
+                    >
+                      <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>`
+                  : ''
+              }
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
+
+function populateEquipFormClients(selectedClientId = '') {
+  const select = document.getElementById('equip-form-client');
+  if (!select) return;
+  const clients = window.db.getClients ? window.db.getClients() : [];
+  const options = ['<option value="">Geral / Sem Cliente Específico</option>'];
+  for (const c of clients) {
+    options.push(
+      `<option value="${c.id}" ${c.id === selectedClientId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
+    );
+  }
+  select.innerHTML = options.join('');
+}
+
+function populateEquipFormUsers(clientId = '', selectedUserId = '') {
+  const select = document.getElementById('equip-form-user');
+  if (!select) return;
+  const allUsers = window.db.getUsers ? window.db.getUsers() : [];
+  const filteredUsers = clientId
+    ? allUsers.filter((u) => !u.clientId || u.clientId === clientId)
+    : allUsers;
+
+  const options = ['<option value="">Não atribuído</option>'];
+  for (const u of filteredUsers) {
+    options.push(
+      `<option value="${u.id}" ${u.id === selectedUserId ? 'selected' : ''}>${escapeHtml(u.name)} (${escapeHtml(u.role)})</option>`
+    );
+  }
+  select.innerHTML = options.join('');
+}
+
+function onEquipFormClientChange() {
+  const clientVal = document.getElementById('equip-form-client')?.value || '';
+  populateEquipFormUsers(clientVal);
+}
+
+function openNewEquipmentModal() {
+  const modal = document.getElementById('modal-equipment-form');
+  if (!modal) return;
+
+  const form = document.getElementById('form-equipment');
+  if (form) form.reset();
+
+  const idInput = document.getElementById('equip-form-id');
+  if (idInput) idInput.value = '';
+
+  const titleEl = document.getElementById('equipment-form-modal-title');
+  if (titleEl) titleEl.textContent = 'Novo Equipamento no Inventário';
+
+  populateEquipFormClients('');
+  populateEquipFormUsers('', '');
+
+  modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeEquipmentModal() {
+  const modal = document.getElementById('modal-equipment-form');
+  if (modal) modal.classList.add('hidden');
+}
+
+function editEquipment(id) {
+  const eq = window.db.getEquipmentById ? window.db.getEquipmentById(id) : null;
+  if (!eq) {
+    showToast('Equipamento não encontrado.', 'error');
+    return;
+  }
+
+  const modal = document.getElementById('modal-equipment-form');
+  if (!modal) return;
+
+  const idInput = document.getElementById('equip-form-id');
+  const typeInput = document.getElementById('equip-form-type');
+  const nameInput = document.getElementById('equip-form-name');
+  const serialInput = document.getElementById('equip-form-serial');
+  const notesInput = document.getElementById('equip-form-notes');
+  const titleEl = document.getElementById('equipment-form-modal-title');
+
+  if (idInput) idInput.value = eq.id;
+  if (typeInput) typeInput.value = eq.type || 'Desktop';
+  if (nameInput) nameInput.value = eq.name || '';
+  if (serialInput) serialInput.value = eq.serialNumber || '';
+  if (notesInput) notesInput.value = eq.notes || '';
+  if (titleEl) titleEl.textContent = `Editar Equipamento: ${eq.name}`;
+
+  populateEquipFormClients(eq.clientId || '');
+  populateEquipFormUsers(eq.clientId || '', eq.userId || '');
+
+  modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+async function handleSaveEquipment(e) {
+  e.preventDefault();
+
+  const id = (document.getElementById('equip-form-id')?.value || '').trim();
+  const type = document.getElementById('equip-form-type')?.value || 'Desktop';
+  const name = (document.getElementById('equip-form-name')?.value || '').trim();
+  const serialNumber = (document.getElementById('equip-form-serial')?.value || '').trim().toUpperCase();
+  const clientId = document.getElementById('equip-form-client')?.value || '';
+  const userId = document.getElementById('equip-form-user')?.value || '';
+  const notes = (document.getElementById('equip-form-notes')?.value || '').trim();
+
+  if (!name) {
+    showToast('Informe o nome ou modelo do equipamento.', 'error');
+    return;
+  }
+  if (!serialNumber) {
+    showToast('Informe o número de série / identificador do equipamento.', 'error');
+    return;
+  }
+
+  try {
+    if (id) {
+      await window.db.updateEquipment(id, {
+        name,
+        type,
+        serialNumber,
+        clientId,
+        userId,
+        notes
+      });
+      showToast('Equipamento atualizado com sucesso!');
+    } else {
+      await window.db.addEquipment({
+        name,
+        type,
+        serialNumber,
+        clientId,
+        userId,
+        notes
+      });
+      showToast('Equipamento adicionado ao inventário com sucesso!');
+    }
+    closeEquipmentModal();
+    refreshAllViews();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function deleteEquipmentConfirm(id) {
+  const session = window.db.getSession();
+  if (session?.role !== 'ADMIN') {
+    showToast('Apenas administradores podem excluir equipamentos do inventário.', 'error');
+    return;
+  }
+
+  const eq = window.db.getEquipmentById ? window.db.getEquipmentById(id) : null;
+  const name = eq ? eq.name : 'este equipamento';
+
+  if (!confirm(`Tem certeza que deseja excluir "${name}" do inventário? Os chamados existentes permanecerão com o registro histórico.`)) {
+    return;
+  }
+
+  try {
+    await window.db.deleteEquipment(id);
+    showToast('Equipamento removido do inventário.');
+    refreshAllViews();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function openEquipmentHistory(equipmentId) {
+  const eq = window.db.getEquipmentById ? window.db.getEquipmentById(equipmentId) : null;
+  if (!eq) {
+    showToast('Equipamento não encontrado.', 'error');
+    return;
+  }
+
+  const modal = document.getElementById('modal-equipment-history');
+  if (!modal) return;
+
+  const titleEl = document.getElementById('equip-history-title');
+  const metaEl = document.getElementById('equip-history-meta');
+  const typeEl = document.getElementById('equip-history-type');
+  const clientEl = document.getElementById('equip-history-client');
+  const userEl = document.getElementById('equip-history-user');
+  const countEl = document.getElementById('equip-history-count');
+  const timelineEl = document.getElementById('equip-history-timeline');
+
+  const clients = window.db.getClients ? window.db.getClients() : [];
+  const users = window.db.getUsers ? window.db.getUsers() : [];
+  const client = clients.find((c) => c.id === eq.clientId);
+  const user = users.find((u) => u.id === eq.userId);
+
+  if (titleEl) titleEl.textContent = eq.name;
+  if (metaEl) metaEl.textContent = `Nº de Série: ${eq.serialNumber || 'N/A'}`;
+  if (typeEl) typeEl.textContent = eq.type || 'Equipamento';
+  if (clientEl) clientEl.textContent = client ? client.name : 'Geral / Sem Cliente';
+  if (userEl) userEl.textContent = user ? user.name : 'Não atribuído';
+
+  // Busca todos os chamados deste equipamento (por id ou serial para compatibilidade)
+  const allTickets = window.db.getTickets ? window.db.getTickets() : [];
+  const histTickets = allTickets.filter(
+    (t) => t.equipmentId === equipmentId || (t.equipmentSerial && t.equipmentSerial === eq.serialNumber)
+  );
+
+  // Ordena pelo mais recente
+  histTickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  if (countEl) countEl.textContent = `${histTickets.length} chamado(s)`;
+
+  if (!timelineEl) return;
+
+  if (histTickets.length === 0) {
+    timelineEl.innerHTML = `
+      <div class="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+        <i data-lucide="check-circle" class="w-8 h-8 text-emerald-500 mx-auto mb-2"></i>
+        <p class="text-xs font-semibold text-slate-700">Nenhum chamado registrado para este equipamento</p>
+        <p class="text-[11px] text-slate-400 mt-1">Quando novos chamados forem abertos para este ativo, o histórico completo aparecerá aqui.</p>
+      </div>
+    `;
+  } else {
+    timelineEl.innerHTML = histTickets
+      .map((t) => {
+        const prob = window.db.getProblemTypes().find((p) => p.id === t.problemTypeId);
+        const probName = prob ? prob.name : 'Suporte Geral';
+        const dateStr = new Date(t.createdAt).toLocaleString('pt-BR');
+        const resolvedStr = t.resolvedAt ? new Date(t.resolvedAt).toLocaleString('pt-BR') : null;
+
+        const statusColors = {
+          ABERTO: 'bg-amber-100 text-amber-800 border-amber-200',
+          EM_ATENDIMENTO: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+          RESOLVIDO: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+          FECHADO: 'bg-slate-100 text-slate-700 border-slate-200'
+        };
+
+        return `
+          <div class="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 transition-colors">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs font-bold text-slate-900">#${t.id} - ${escapeHtml(t.title)}</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusColors[t.status] || 'bg-slate-100 text-slate-700'}">
+                    ${escapeHtml(t.status)}
+                  </span>
+                </div>
+                <p class="text-xs text-slate-600 line-clamp-2">${escapeHtml(t.description)}</p>
+                <div class="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-slate-400">
+                  <span><strong class="text-slate-600">Tipo:</strong> ${escapeHtml(probName)}</span>
+                  <span><strong class="text-slate-600">Aberto em:</strong> ${dateStr}</span>
+                  <span><strong class="text-slate-600">Técnico:</strong> ${escapeHtml(t.technician || 'Não atribuído')}</span>
+                  ${resolvedStr ? `<span><strong class="text-emerald-700">Resolvido em:</strong> ${resolvedStr}</span>` : ''}
+                </div>
+              </div>
+              <button
+                onclick="closeEquipmentHistoryModal(); openDetailModal('${t.id}');"
+                class="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold shrink-0 cursor-pointer transition-colors"
+              >
+                Ver Chamado
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeEquipmentHistoryModal() {
+  const modal = document.getElementById('modal-equipment-history');
+  if (modal) modal.classList.add('hidden');
+}
+
+// Expõe globalmente no window para compatibilidade com os handlers inline
+window.renderInventory = renderInventory;
+window.openNewEquipmentModal = openNewEquipmentModal;
+window.closeEquipmentModal = closeEquipmentModal;
+window.editEquipment = editEquipment;
+window.handleSaveEquipment = handleSaveEquipment;
+window.deleteEquipmentConfirm = deleteEquipmentConfirm;
+window.openEquipmentHistory = openEquipmentHistory;
+window.closeEquipmentHistoryModal = closeEquipmentHistoryModal;
+window.onEquipFormClientChange = onEquipFormClientChange;
 
 // ==========================================
 // UTILITÁRIOS

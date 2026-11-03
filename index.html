@@ -175,6 +175,14 @@
           <span id="badge-solutions-count" class="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-300">0</span>
         </button>
 
+        <button onclick="switchTab('inventory')" id="nav-inventory" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
+          <span class="flex items-center gap-3">
+            <i data-lucide="cpu" class="w-4 h-4"></i>
+            <span>Inventário TI</span>
+          </span>
+          <span id="badge-inventory-count" class="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-300">0</span>
+        </button>
+
         <button onclick="switchTab('users')" id="nav-users" class="nav-btn admin-only w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer">
           <span class="flex items-center gap-3">
             <i data-lucide="users" class="w-4 h-4"></i>
@@ -743,15 +751,20 @@
                 <input type="text" id="prob-category" required placeholder="Ex: Infraestrutura, Hardware, Sistema" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
 
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-3 gap-2.5">
                 <div>
-                  <label class="block text-xs font-semibold text-slate-700 mb-1">SLA Padrão (Horas) *</label>
-                  <input type="number" id="prob-sla" required min="0.5" step="0.5" value="4" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <label class="block text-[11px] font-semibold text-slate-700 mb-1">1ª Resposta (h) *</label>
+                  <input type="number" id="prob-first-response-sla" required min="0.25" step="0.25" value="1" title="Prazo útil para o técnico dar o aceite / iniciar o atendimento" class="w-full px-2.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
 
                 <div>
-                  <label class="block text-xs font-semibold text-slate-700 mb-1">Prioridade *</label>
-                  <select id="prob-priority" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <label class="block text-[11px] font-semibold text-slate-700 mb-1">Resolução (h) *</label>
+                  <input type="number" id="prob-sla" required min="0.5" step="0.5" value="4" title="Prazo útil total para finalizar o chamado" class="w-full px-2.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-700 mb-1">Prioridade *</label>
+                  <select id="prob-priority" class="w-full px-2 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="Crítica">Crítica</option>
                     <option value="Alta">Alta</option>
                     <option value="Média" selected>Média</option>
@@ -949,6 +962,60 @@
               <button type="submit" class="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-lg transition-colors cursor-pointer">
                 Salvar Logo e Identidade Visual
               </button>
+            </form>
+          </div>
+
+          <!-- Horário de Atendimento / Expediente Comercial (Cálculo Útil de SLA) -->
+          <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div>
+                <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+                  <i data-lucide="clock-4" class="w-4 h-4 text-indigo-600"></i>
+                  Horário de Atendimento do Contrato & Expediente Comercial (SLA Útil)
+                </h3>
+                <p class="text-xs text-slate-500 mt-0.5">
+                  Configure o horário oficial de expediente. Os SLAs de <strong>Primeira Resposta</strong> e de <strong>Resolução</strong> só são contabilizados dentro do horário útil (chamados abertos à noite, fins de semana ou fora do expediente ficam com o prazo pausado até o próximo dia útil).
+                </p>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5" id="business-hours-current-status-badge">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span id="business-hours-badge-label">Expediente: 08:00 às 18:00 (Seg a Sex)</span>
+              </span>
+            </div>
+
+            <form onsubmit="handleSaveBusinessHours(event)" class="space-y-4">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Horário de Início do Expediente *</label>
+                  <input type="time" id="cfg-bh-start" value="08:00" required class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Horário de Término do Expediente *</label>
+                  <input type="time" id="cfg-bh-end" value="18:00" required class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Dias de Funcionamento Útil *</label>
+                  <select id="cfg-bh-days" class="w-full px-3 py-2 text-sm border border-slate-300 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="1,2,3,4,5" selected>Segunda a Sexta (Padrão Corporativo)</option>
+                    <option value="1,2,3,4,5,6">Segunda a Sábado</option>
+                    <option value="1,2,3,4,5,6,7">Todos os Dias (Regime 24/7)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200 text-xs text-indigo-950 flex items-start gap-2.5">
+                <i data-lucide="info" class="w-4 h-4 text-indigo-600 shrink-0 mt-0.5"></i>
+                <p>
+                  <strong>Como funciona o SLA em horário comercial:</strong> Se um chamado for aberto às 17h45 de uma sexta-feira com SLA de 2 horas úteis (e o expediente encerra às 18h), serão consumidos 15 minutos na sexta-feira. A contagem pausa durante a noite de sexta, sábado e domingo, retornando na segunda-feira às 08h e vencendo às 09h45 da manhã!
+                </p>
+              </div>
+
+              <div class="flex justify-end">
+                <button type="submit" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors cursor-pointer flex items-center gap-2">
+                  <i data-lucide="check" class="w-4 h-4"></i>
+                  <span>Salvar Regra de Expediente & SLA</span>
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -1369,6 +1436,137 @@
         </div>
       </section>
 
+      <!-- ==========================================
+           ABA 8: INVENTÁRIO DE EQUIPAMENTOS TI (GESTÃO DE ATIVOS E HISTÓRICO)
+           ========================================== -->
+      <section id="tab-inventory" class="tab-section space-y-6">
+        <!-- Indicadores do Inventário de Ativos -->
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Total de Ativos Cadastrados</p>
+              <p class="text-2xl font-bold text-slate-900 mt-1" id="inv-kpi-total">0</p>
+              <span class="text-[11px] text-indigo-600 font-medium">Equipamentos no parque</span>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <i data-lucide="cpu" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Desktops & Notebooks</p>
+              <p class="text-2xl font-bold text-sky-600 mt-1" id="inv-kpi-workstations">0</p>
+              <span class="text-[11px] text-slate-400">Estações de trabalho</span>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
+              <i data-lucide="laptop" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Servidores & Redes</p>
+              <p class="text-2xl font-bold text-purple-600 mt-1" id="inv-kpi-servers">0</p>
+              <span class="text-[11px] text-slate-400">Infraestrutura crítica</span>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+              <i data-lucide="server" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Com Chamados Ativos</p>
+              <p class="text-2xl font-bold text-amber-600 mt-1" id="inv-kpi-with-tickets">0</p>
+              <span class="text-[11px] text-slate-400">Em manutenção no momento</span>
+            </div>
+            <div class="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+              <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Barra de Filtros, Busca e Botão de Novo Equipamento -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div class="relative flex-1 min-w-[240px]">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+            <input
+              type="text"
+              id="inv-filter-search"
+              oninput="renderInventory()"
+              placeholder="Buscar por Número de Série, Modelo, Nome ou Responsável..."
+              class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <select
+              id="inv-filter-type"
+              onchange="renderInventory()"
+              class="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="ALL">Todos os Tipos</option>
+              <option value="Desktop">Desktops</option>
+              <option value="Notebook">Notebooks</option>
+              <option value="Servidor">Servidores</option>
+              <option value="Impressora">Impressoras</option>
+              <option value="Roteador / Switch">Roteador / Switch / Rede</option>
+              <option value="Nobreak">Nobreaks</option>
+              <option value="Monitor">Monitores</option>
+              <option value="Outro">Outros Ativos</option>
+            </select>
+
+            <select
+              id="inv-filter-client"
+              onchange="renderInventory()"
+              class="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="ALL">Todas as Empresas Clientes</option>
+            </select>
+
+            <button
+              type="button"
+              onclick="openNewEquipmentModal()"
+              class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>Novo Equipamento</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabela de Equipamentos do Inventário -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-4 border-b border-slate-200 flex items-center justify-between">
+            <h4 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+              <i data-lucide="cpu" class="w-4 h-4 text-indigo-600"></i>
+              <span>Ativos de TI Cadastrados no Inventário</span>
+            </h4>
+            <span class="text-xs text-slate-500" id="inv-table-subtitle">0 equipamentos listados</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase text-slate-500">
+                  <th class="py-3 px-4">Tipo & Ativo</th>
+                  <th class="py-3 px-4">Nº de Série / Service Tag</th>
+                  <th class="py-3 px-4">Empresa Cliente / Contrato</th>
+                  <th class="py-3 px-4">Usuário / Responsável</th>
+                  <th class="py-3 px-4 text-center">Histórico de Chamados</th>
+                  <th class="py-3 px-4">Data Cadastro</th>
+                  <th class="py-3 px-4 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="inv-table-body" class="divide-y divide-slate-200 text-sm">
+                <!-- Preenchido via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
     </div>
   </main>
 
@@ -1422,8 +1620,78 @@
           </div>
         </div>
 
-        <!-- Tipo de Problema + Cálculo Automático de SLA -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <!-- Equipamento Relacionado (Inventário de Ativos) -->
+        <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <i data-lucide="cpu" class="w-4 h-4 text-indigo-600"></i>
+              <span>Equipamento Relacionado (Inventário TI)</span>
+            </label>
+            <button
+              type="button"
+              onclick="toggleNewTicketEquipMode()"
+              id="btn-toggle-equip-mode"
+              class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+            >
+              + Cadastrar novo equipamento
+            </button>
+          </div>
+
+          <!-- Modo 1: Selecionar do Inventário -->
+          <div id="ticket-equip-select-box">
+            <select
+              id="ticket-equipment-select"
+              class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Nenhum equipamento vinculado (Não se aplica / Serviço geral)</option>
+            </select>
+          </div>
+
+          <!-- Modo 2: Cadastro rápido de equipamento (com deduplicação automática) -->
+          <div id="ticket-equip-create-box" class="hidden p-3 bg-white rounded-lg border border-indigo-200 space-y-2">
+            <p class="text-[11px] text-slate-500">
+              Cadastre o equipamento. Se o <strong>Número de Série</strong> já estiver no banco, será vinculado automaticamente para não ter duplicidade.
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-700 mb-0.5">Tipo *</label>
+                <select id="ticket-new-equip-type" class="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white">
+                  <option value="Desktop">Desktop / Computador</option>
+                  <option value="Notebook">Notebook / Laptop</option>
+                  <option value="Servidor">Servidor</option>
+                  <option value="Impressora">Impressora / Multifuncional</option>
+                  <option value="Roteador / Switch">Roteador / Switch / Rede</option>
+                  <option value="Nobreak">Nobreak</option>
+                  <option value="Monitor">Monitor</option>
+                  <option value="Outro">Outro Equipamento</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-700 mb-0.5">Nome / Modelo *</label>
+                <input
+                  type="text"
+                  id="ticket-new-equip-name"
+                  placeholder="Ex: Dell Optiplex 3080"
+                  class="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-700 mb-0.5">Nº de Série / Service Tag *</label>
+                <input
+                  type="text"
+                  id="ticket-new-equip-serial"
+                  placeholder="Ex: BRJ9871"
+                  class="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg font-mono uppercase"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tipo de Problema + Diferenciação de SLA (1ª Resposta vs Resolução) -->
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <div class="sm:col-span-2">
             <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Problema *</label>
             <select id="ticket-problem" required onchange="onProblemTypeChange()" class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
@@ -1432,8 +1700,13 @@
           </div>
 
           <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">Prazo SLA (Horas) *</label>
-            <input type="number" id="ticket-sla" required min="0.5" step="0.5" value="4" class="w-full px-3.5 py-2.5 text-sm font-semibold text-indigo-700 bg-indigo-50/50 border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <label class="block text-xs font-semibold text-slate-700 mb-1" title="Prazo para o técnico aceitar e iniciar o atendimento">1ª Resposta (h) *</label>
+            <input type="number" id="ticket-first-response-sla" required min="0.25" step="0.25" value="1" oninput="updateTicketDuePreview()" class="w-full px-3 py-2.5 text-sm font-semibold text-emerald-700 bg-emerald-50/50 border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1" title="Prazo final total para conclusão do chamado">Resolução (h) *</label>
+            <input type="number" id="ticket-sla" required min="0.5" step="0.5" value="4" oninput="updateTicketDuePreview()" class="w-full px-3 py-2.5 text-sm font-semibold text-indigo-700 bg-indigo-50/50 border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
         </div>
 
@@ -1468,13 +1741,27 @@
           <textarea id="ticket-desc" rows="3" required placeholder="Descreva os sintomas, mensagens de erro ou impacto na operação..." class="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
         </div>
 
-        <!-- Preview de Vencimento do SLA -->
-        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-          <span class="text-slate-600 flex items-center gap-1.5">
-            <i data-lucide="clock-4" class="w-4 h-4 text-indigo-600"></i>
-            Previsão limite de resolução (SLA):
-          </span>
-          <strong id="ticket-due-preview" class="text-slate-900 font-semibold">--</strong>
+        <!-- Previsão dos Prazos limites SLA em Horário de Expediente -->
+        <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+          <div class="flex items-center justify-between text-slate-500 text-[11px]">
+            <span class="flex items-center gap-1.5 font-medium">
+              <i data-lucide="clock-4" class="w-3.5 h-3.5 text-indigo-600"></i>
+              Contabilização em Horário Comercial:
+            </span>
+            <span id="ticket-preview-business-hours" class="font-semibold text-slate-700">08:00 às 18:00 (Seg a Sex)</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-slate-200">
+            <div class="p-2 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+              <span class="text-emerald-800 font-medium">1ª Resposta (Aceite/Início):</span>
+              <strong id="ticket-first-due-preview" class="text-emerald-950 font-bold font-mono">--</strong>
+            </div>
+
+            <div class="p-2 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-between">
+              <span class="text-indigo-800 font-medium">Resolução Final (SLA):</span>
+              <strong id="ticket-due-preview" class="text-indigo-950 font-bold font-mono">--</strong>
+            </div>
+          </div>
         </div>
 
         <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200">
@@ -1516,16 +1803,32 @@
       </div>
 
       <div class="p-6 space-y-5 max-h-[84vh] overflow-y-auto">
-        <!-- Faixa de SLA e Informações do Solicitante -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
+        <!-- Faixa de SLAs, Equipamento e Informações do Solicitante -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
           <div>
             <span class="text-[11px] font-semibold uppercase text-slate-400">Solicitante & Empresa Cliente</span>
             <p id="detail-user-name" class="font-bold text-sm text-slate-900 mt-0.5">--</p>
             <p id="detail-user-meta" class="text-xs text-slate-500">--</p>
           </div>
+
           <div>
-            <span class="text-[11px] font-semibold uppercase text-slate-400">Controle de SLA Contratual</span>
-            <div id="detail-sla-badge" class="mt-1"></div>
+            <span class="text-[11px] font-semibold uppercase text-slate-400 flex items-center justify-between">
+              <span>Equipamento (Inventário)</span>
+              <button type="button" id="btn-view-ticket-equip-history" onclick="handleViewActiveTicketEquipHistory()" class="hidden text-[10px] text-indigo-600 font-bold hover:underline cursor-pointer">
+                Ver Histórico
+              </button>
+            </span>
+            <div id="detail-equip-container" class="mt-1">
+              <span class="text-xs text-slate-400">Nenhum equipamento vinculado</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-semibold uppercase text-slate-400">SLAs (Horário Útil)</span>
+              <span id="detail-business-hours-badge" class="px-2 py-0.2 rounded text-[10px] font-semibold"></span>
+            </div>
+            <div id="detail-sla-badge" class="mt-1 space-y-1"></div>
             <p id="detail-dates" class="text-[11px] text-slate-500 mt-1">--</p>
           </div>
         </div>
@@ -1749,19 +2052,20 @@
             </div>
           </div>
 
-          <!-- Consulta rápida ao Banco de Soluções dentro do atendimento -->
-          <div id="detail-solution-picker-box" class="p-2.5 rounded-lg bg-white border border-indigo-200 flex flex-wrap items-center gap-2">
-            <i data-lucide="book-open-check" class="w-4 h-4 text-indigo-600 shrink-0"></i>
-            <select id="detail-solution-picker" class="flex-1 min-w-[200px] text-xs bg-transparent text-slate-700 focus:outline-none">
-              <option value="">Consultar solução anterior do Banco de Soluções...</option>
-            </select>
-            <button
-              type="button"
-              onclick="applySolutionToTicketForm()"
-              class="px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
-            >
-              Preencher com esta Solução
-            </button>
+          <!-- Correlação Automática: Soluções & Atendimentos Anteriores para este Equipamento / Problema -->
+          <div id="detail-correlated-solutions-box" class="p-3.5 rounded-xl bg-gradient-to-r from-amber-50/90 via-indigo-50/70 to-slate-50 border border-amber-200/90 space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="sparkles" class="w-4 h-4 text-amber-600"></i>
+                <h5 class="text-xs font-bold text-slate-800">Correlação Inteligente com Atendimentos Anteriores</h5>
+              </div>
+              <span id="detail-correlated-count-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                Verificando histórico...
+              </span>
+            </div>
+            <div id="detail-correlated-list" class="space-y-2 text-xs">
+              <!-- Preenchido via JS com os atendimentos e soluções anteriores -->
+            </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1916,6 +2220,154 @@
       </div>
       <div class="flex-1 bg-slate-100">
         <iframe id="pdf-viewer-frame" src="" class="w-full h-full border-0" title="Visualizador de PDF"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL: CADASTRAR / EDITAR EQUIPAMENTO NO INVENTÁRIO
+       ========================================== -->
+  <div id="modal-equipment-form" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="cpu" class="w-5 h-5 text-indigo-400"></i>
+          <h3 id="equipment-form-modal-title" class="font-bold text-base">Novo Equipamento no Inventário</h3>
+        </div>
+        <button onclick="closeEquipmentModal()" class="text-slate-400 hover:text-white cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="form-equipment" onsubmit="handleSaveEquipment(event)" class="p-6 space-y-4">
+        <input type="hidden" id="equip-form-id" value="" />
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Equipamento *</label>
+          <select id="equip-form-type" required class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="Desktop">Desktop / Computador</option>
+            <option value="Notebook">Notebook / Laptop</option>
+            <option value="Servidor">Servidor</option>
+            <option value="Impressora">Impressora / Multifuncional</option>
+            <option value="Roteador / Switch">Roteador / Switch / Rede</option>
+            <option value="Nobreak">Nobreak</option>
+            <option value="Monitor">Monitor</option>
+            <option value="Outro">Outro Equipamento</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Nome / Modelo do Equipamento *</label>
+          <input
+            type="text"
+            id="equip-form-name"
+            required
+            placeholder="Ex: Dell Inspiron 15, Switch Cisco 24p"
+            class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Número de Série / Service Tag *</label>
+          <input
+            type="text"
+            id="equip-form-serial"
+            required
+            placeholder="Ex: SN-98234-BR"
+            class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          <p class="text-[11px] text-slate-500 mt-1">Identificador único. Se cadastrado novamente, os dados serão vinculados a este mesmo ativo para evitar duplicidade.</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Empresa Cliente / Contrato</label>
+            <select id="equip-form-client" onchange="onEquipFormClientChange()" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">Geral / Sem Cliente Específico</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Usuário / Responsável</label>
+            <select id="equip-form-user" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">Não atribuído</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Observações Técnicas / Configuração</label>
+          <textarea
+            id="equip-form-notes"
+            rows="2"
+            placeholder="Ex: 16GB RAM, SSD 512GB, Windows 11 Pro, IP fixo 192.168.1.50..."
+            class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200">
+          <button type="button" onclick="closeEquipmentModal()" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 cursor-pointer">
+            Cancelar
+          </button>
+          <button type="submit" class="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-sm cursor-pointer">
+            Salvar Equipamento
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL: HISTÓRICO DE ATENDIMENTOS DO EQUIPAMENTO
+       ========================================== -->
+  <div id="modal-equipment-history" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden animate-fadeIn flex flex-col max-h-[85vh]">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
+            <i data-lucide="cpu" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 id="equip-history-title" class="font-bold text-base">Histórico do Equipamento</h3>
+            <p id="equip-history-meta" class="text-xs text-slate-400">Nº de Série: --</p>
+          </div>
+        </div>
+        <button onclick="closeEquipmentHistoryModal()" class="text-slate-400 hover:text-white cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 overflow-y-auto space-y-4">
+        <!-- Detalhes do Equipamento -->
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div>
+            <span class="text-slate-400 block text-[10px] uppercase font-semibold">Tipo</span>
+            <strong id="equip-history-type" class="text-slate-800">--</strong>
+          </div>
+          <div>
+            <span class="text-slate-400 block text-[10px] uppercase font-semibold">Empresa Cliente</span>
+            <strong id="equip-history-client" class="text-slate-800">--</strong>
+          </div>
+          <div>
+            <span class="text-slate-400 block text-[10px] uppercase font-semibold">Responsável</span>
+            <strong id="equip-history-user" class="text-slate-800">--</strong>
+          </div>
+          <div>
+            <span class="text-slate-400 block text-[10px] uppercase font-semibold">Total de Chamados</span>
+            <strong id="equip-history-count" class="text-indigo-600 font-bold">0 chamados</strong>
+          </div>
+        </div>
+
+        <!-- Linha do Tempo de Chamados e Manutenções do Equipamento -->
+        <div>
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-2">
+            <i data-lucide="history" class="w-4 h-4 text-indigo-600"></i>
+            <span>Histórico de Chamados & Manutenções Realizadas</span>
+          </h4>
+          <div id="equip-history-timeline" class="space-y-3">
+            <!-- Preenchido via JS -->
+          </div>
+        </div>
       </div>
     </div>
   </div>

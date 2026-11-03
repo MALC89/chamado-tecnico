@@ -53,7 +53,7 @@ def init_db():
         );
     """)
 
-    # Migração automática de colunas de marca e tema caso o banco já exista
+    # Migração automática de colunas de marca, tema e expediente caso o banco já exista
     existing_cols = [row["name"] for row in cur.execute("PRAGMA table_info(contract);").fetchall()]
     for col_name, default_val in [
         ("company_name", "'ServiceDesk Pro'"),
@@ -61,7 +61,10 @@ def init_db():
         ("login_subtitle", "'Portal de Chamados Técnicos & Controle de SLA'"),
         ("support_contact", "''"),
         ("admin_avatar", "''"),
-        ("theme_color", "'indigo'")
+        ("theme_color", "'indigo'"),
+        ("business_hours_start", "'08:00'"),
+        ("business_hours_end", "'18:00'"),
+        ("business_days", "'1,2,3,4,5'")
     ]:
         if col_name not in existing_cols:
             cur.execute(f"ALTER TABLE contract ADD COLUMN {col_name} TEXT DEFAULT {default_val};")
@@ -74,11 +77,11 @@ def init_db():
                 id, client_name, cnpj, contract_number, plan_type,
                 monthly_hours_quota, sla_target_percent, manager_name, status,
                 admin_user, admin_password, company_name, company_logo, login_subtitle, support_contact,
-                admin_avatar, theme_color
+                admin_avatar, theme_color, business_hours_start, business_hours_end, business_days
             ) VALUES (
                 1, '', '', '', 'Contrato Fixo Mensal', 0, 95, '', 'Ativo',
                 'admin', 'admin123', 'ServiceDesk Pro', '', 'Portal de Chamados Técnicos & Controle de SLA', '',
-                '', 'indigo'
+                '', 'indigo', '08:00', '18:00', '1,2,3,4,5'
             );
         """)
 
@@ -140,8 +143,27 @@ def init_db():
             name TEXT NOT NULL,
             category TEXT NOT NULL,
             default_sla_hours REAL NOT NULL DEFAULT 4,
+            first_response_sla_hours REAL NOT NULL DEFAULT 1,
             priority TEXT NOT NULL DEFAULT 'Média',
             description TEXT DEFAULT ''
+        );
+    """)
+
+    problem_cols = [row["name"] for row in cur.execute("PRAGMA table_info(problem_types);").fetchall()]
+    if "first_response_sla_hours" not in problem_cols:
+        cur.execute("ALTER TABLE problem_types ADD COLUMN first_response_sla_hours REAL DEFAULT 1.0;")
+
+    # Tabela de Inventário de Equipamentos (com identificação única por número de série)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS equipment (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'Desktop',
+            serial_number TEXT NOT NULL,
+            client_id TEXT DEFAULT '',
+            user_id TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            created_at TEXT NOT NULL
         );
     """)
 
@@ -152,8 +174,10 @@ def init_db():
             description TEXT NOT NULL,
             user_id TEXT NOT NULL,
             client_id TEXT DEFAULT '',
+            equipment_id TEXT DEFAULT '',
             problem_type_id TEXT NOT NULL,
             sla_hours REAL NOT NULL,
+            first_response_sla_hours REAL DEFAULT 1.0,
             priority TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'Aberto',
             technician TEXT DEFAULT 'Aguardando Direcionamento (Admin)',
@@ -163,6 +187,8 @@ def init_db():
             created_at TEXT NOT NULL,
             assigned_at TEXT,
             started_at TEXT,
+            first_response_due_at TEXT,
+            first_responded_at TEXT,
             due_at TEXT NOT NULL,
             resolved_at TEXT,
             notes_json TEXT DEFAULT '[]'
@@ -172,6 +198,14 @@ def init_db():
     ticket_cols = [row["name"] for row in cur.execute("PRAGMA table_info(tickets);").fetchall()]
     if "client_id" not in ticket_cols:
         cur.execute("ALTER TABLE tickets ADD COLUMN client_id TEXT DEFAULT '';")
+    if "equipment_id" not in ticket_cols:
+        cur.execute("ALTER TABLE tickets ADD COLUMN equipment_id TEXT DEFAULT '';")
+    if "first_response_sla_hours" not in ticket_cols:
+        cur.execute("ALTER TABLE tickets ADD COLUMN first_response_sla_hours REAL DEFAULT 1.0;")
+    if "first_response_due_at" not in ticket_cols:
+        cur.execute("ALTER TABLE tickets ADD COLUMN first_response_due_at TEXT;")
+    if "first_responded_at" not in ticket_cols:
+        cur.execute("ALTER TABLE tickets ADD COLUMN first_responded_at TEXT;")
     if "problem_found" not in ticket_cols:
         cur.execute("ALTER TABLE tickets ADD COLUMN problem_found TEXT DEFAULT '';")
     if "service_performed" not in ticket_cols:
@@ -204,6 +238,47 @@ def init_db():
     conn.close()
 
 
+def calculate_business_due(start_dt, sla_hours, start_time_str="08:00", end_time_str="18:00", business_days_str="1,2,3,4,5"):
+    """Calcula o prazo limite somando apenas os minutos dentro do horário de expediente comercial configurado."""
+    try:
+        sh, sm = map(int, (start_time_str or "08:00").split(":"))
+        eh, em = map(int, (end_time_str or "18:00").split(":"))
+        allowed_days = [int(x.strip()) for x in (business_days_str or "1,2,3,4,5").split(",") if x.strip().isdigit()]
+        if not allowed_days:
+            allowed_days = [1, 2, 3, 4, 5]
+    except Exception:
+        sh, sm, eh, em, allowed_days = 8, 0, 18, 0, [1, 2, 3, 4, 5]
+
+    curr = start_dt
+    if curr.tzinfo is None:
+        curr = curr.replace(tzinfo=timezone.utc)
+
+    remaining_minutes = int(float(sla_hours) * 60)
+    max_steps = 60 * 24 * 60
+    step = 0
+
+    while remaining_minutes > 0 and step < max_steps:
+        iso_day = curr.isoweekday()  # 1=Segunda, ..., 7=Domingo
+        curr_min = curr.hour * 60 + curr.minute
+        open_min = sh * 60 + sm
+        close_min = eh * 60 + em
+
+        if iso_day in allowed_days and open_min <= curr_min < close_min:
+            avail_today = close_min - curr_min
+            take = min(remaining_minutes, avail_today)
+            curr += timedelta(minutes=take)
+            remaining_minutes -= take
+            step += take
+        else:
+            if iso_day in allowed_days and curr_min < open_min:
+                curr = curr.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            else:
+                curr = (curr + timedelta(days=1)).replace(hour=sh, minute=sm, second=0, microsecond=0)
+            step += 1
+
+    return curr
+
+
 def fetch_full_state():
     conn = get_conn()
     cur = conn.cursor()
@@ -226,7 +301,10 @@ def fetch_full_state():
         "loginSubtitle": c_row["login_subtitle"] or "Portal de Chamados Técnicos & Controle de SLA",
         "supportContact": c_row["support_contact"] or "",
         "adminAvatar": c_row["admin_avatar"] if "admin_avatar" in c_row.keys() else "",
-        "themeColor": (c_row["theme_color"] if "theme_color" in c_row.keys() else "indigo") or "indigo"
+        "themeColor": (c_row["theme_color"] if "theme_color" in c_row.keys() else "indigo") or "indigo",
+        "businessHoursStart": (c_row["business_hours_start"] if "business_hours_start" in c_row.keys() else "08:00") or "08:00",
+        "businessHoursEnd": (c_row["business_hours_end"] if "business_hours_end" in c_row.keys() else "18:00") or "18:00",
+        "businessDays": (c_row["business_days"] if "business_days" in c_row.keys() else "1,2,3,4,5") or "1,2,3,4,5"
     }
 
     cur.execute("SELECT * FROM clients ORDER BY created_at DESC;")
@@ -242,6 +320,21 @@ def fetch_full_state():
             "managerName": r["manager_name"] or "",
             "phone": r["phone"] or "",
             "status": r["status"] or "Ativo",
+            "createdAt": r["created_at"]
+        }
+        for r in cur.fetchall()
+    ]
+
+    cur.execute("SELECT * FROM equipment ORDER BY created_at DESC;")
+    equipment = [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "type": r["type"],
+            "serialNumber": r["serial_number"],
+            "clientId": (r["client_id"] if "client_id" in r.keys() else "") or "",
+            "userId": (r["user_id"] if "user_id" in r.keys() else "") or "",
+            "notes": (r["notes"] if "notes" in r.keys() else "") or "",
             "createdAt": r["created_at"]
         }
         for r in cur.fetchall()
@@ -276,6 +369,7 @@ def fetch_full_state():
             "name": r["name"],
             "category": r["category"],
             "defaultSlaHours": r["default_sla_hours"],
+            "firstResponseSlaHours": float(r["first_response_sla_hours"] if "first_response_sla_hours" in r.keys() and r["first_response_sla_hours"] is not None else 1.0),
             "priority": r["priority"],
             "description": r["description"]
         }
@@ -290,8 +384,10 @@ def fetch_full_state():
             "description": r["description"],
             "userId": r["user_id"],
             "clientId": (r["client_id"] if "client_id" in r.keys() else "") or "",
+            "equipmentId": (r["equipment_id"] if "equipment_id" in r.keys() else "") or "",
             "problemTypeId": r["problem_type_id"],
             "slaHours": r["sla_hours"],
+            "firstResponseSlaHours": float(r["first_response_sla_hours"] if "first_response_sla_hours" in r.keys() and r["first_response_sla_hours"] is not None else 1.0),
             "priority": r["priority"],
             "status": r["status"],
             "technician": r["technician"],
@@ -301,6 +397,8 @@ def fetch_full_state():
             "createdAt": r["created_at"],
             "assignedAt": r["assigned_at"] if "assigned_at" in r.keys() else None,
             "startedAt": r["started_at"] if "started_at" in r.keys() else None,
+            "firstResponseDueAt": r["first_response_due_at"] if "first_response_due_at" in r.keys() else None,
+            "firstRespondedAt": r["first_responded_at"] if "first_responded_at" in r.keys() else None,
             "dueAt": r["due_at"],
             "resolvedAt": r["resolved_at"],
             "notes": json.loads(r["notes_json"] or "[]")
@@ -330,6 +428,7 @@ def fetch_full_state():
         "contract": contract,
         "clients": clients,
         "users": users,
+        "equipment": equipment,
         "problemTypes": problem_types,
         "tickets": tickets,
         "solutions": solutions
@@ -445,7 +544,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": True, "state": fetch_full_state()})
                 return
 
-            # 2. ATUALIZAR CONTRATO PADRÃO E IDENTIDADE VISUAL (LOGO DA EMPRESA)
+            # 2. ATUALIZAR CONTRATO PADRÃO E IDENTIDADE VISUAL (LOGO DA EMPRESA E HORÁRIO DE EXPEDIENTE)
             if parsed.path == "/api/contract":
                 cur.execute("SELECT * FROM contract WHERE id = 1;")
                 curr = cur.fetchone()
@@ -462,7 +561,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                         login_subtitle = ?,
                         support_contact = ?,
                         admin_avatar = ?,
-                        theme_color = ?
+                        theme_color = ?,
+                        business_hours_start = ?,
+                        business_hours_end = ?,
+                        business_days = ?
                     WHERE id = 1;
                 """, (
                     body.get("clientName", curr["client_name"]),
@@ -476,7 +578,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     body.get("loginSubtitle", curr["login_subtitle"] or "Portal de Chamados Técnicos & Controle de SLA"),
                     body.get("supportContact", curr["support_contact"] or ""),
                     body.get("adminAvatar", curr["admin_avatar"] or ""),
-                    body.get("themeColor", curr["theme_color"] or "indigo")
+                    body.get("themeColor", curr["theme_color"] or "indigo"),
+                    (body.get("businessHoursStart") if "businessHoursStart" in body else (curr["business_hours_start"] if "business_hours_start" in curr.keys() else "08:00")) or "08:00",
+                    (body.get("businessHoursEnd") if "businessHoursEnd" in body else (curr["business_hours_end"] if "business_hours_end" in curr.keys() else "18:00")) or "18:00",
+                    (body.get("businessDays") if "businessDays" in body else (curr["business_days"] if "business_days" in curr.keys() else "1,2,3,4,5")) or "1,2,3,4,5"
                 ))
                 if body.get("adminPassword"):
                     cur.execute("UPDATE contract SET admin_password = ? WHERE id = 1;", (body["adminPassword"],))
@@ -696,17 +801,18 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": True, "state": fetch_full_state()})
                 return
 
-            # 4. CADASTRAR TIPO DE PROBLEMA & SLA
+            # 4. CADASTRAR TIPO DE PROBLEMA & SLA (SLA DE RESOLUÇÃO + SLA DE PRIMEIRA RESPOSTA)
             if parsed.path == "/api/problems":
                 pid = "prb-" + str(int(time.time() * 1000))
                 cur.execute("""
-                    INSERT INTO problem_types (id, name, category, default_sla_hours, priority, description)
-                    VALUES (?, ?, ?, ?, ?, ?);
+                    INSERT INTO problem_types (id, name, category, default_sla_hours, first_response_sla_hours, priority, description)
+                    VALUES (?, ?, ?, ?, ?, ?, ?);
                 """, (
                     pid,
                     body["name"].strip(),
                     body["category"].strip(),
                     float(body.get("defaultSlaHours") or 4),
+                    float(body.get("firstResponseSlaHours") or 1),
                     body.get("priority", "Média"),
                     (body.get("description") or "").strip()
                 ))
@@ -714,14 +820,95 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": True, "problemId": pid, "state": fetch_full_state()})
                 return
 
-            # 5. ABRIR NOVO CHAMADO (VAI PARA O ADMINISTRADOR DIRECIONAR OU ATENDER)
+            # 4B. CADASTRAR / VINCULAR EQUIPAMENTO NO INVENTÁRIO (COM DEDUPLICAÇÃO POR NÚMERO DE SÉRIE)
+            if parsed.path == "/api/equipment":
+                name = (body.get("name") or "").strip()
+                eq_type = (body.get("type") or "Desktop").strip()
+                serial = (body.get("serialNumber") or "").strip().upper()
+                client_id = (body.get("clientId") or "").strip()
+                user_id = (body.get("userId") or "").strip()
+                notes = (body.get("notes") or "").strip()
+                now_iso = datetime.now(timezone.utc).isoformat()
+
+                if not serial:
+                    self._send_json({"ok": False, "error": "Número de série do equipamento é obrigatório."}, 400)
+                    return
+
+                # Deduplicação: verifica se já existe equipamento cadastrado com o mesmo número de série
+                cur.execute("SELECT * FROM equipment WHERE UPPER(serial_number) = ?;", (serial,))
+                existing = cur.fetchone()
+
+                if existing:
+                    # Já existe no inventário: atualiza dados complementares e reutiliza o mesmo ID para evitar duplicidade
+                    eq_id = existing["id"]
+                    cur.execute("""
+                        UPDATE equipment SET
+                            name = CASE WHEN ? != '' THEN ? ELSE name END,
+                            type = CASE WHEN ? != '' THEN ? ELSE type END,
+                            client_id = CASE WHEN ? != '' THEN ? ELSE client_id END,
+                            user_id = CASE WHEN ? != '' THEN ? ELSE user_id END,
+                            notes = CASE WHEN ? != '' THEN ? ELSE notes END
+                        WHERE id = ?;
+                    """, (name, name, eq_type, eq_type, client_id, client_id, user_id, user_id, notes, notes, eq_id))
+                    conn.commit()
+                    self._send_json({"ok": True, "equipmentId": eq_id, "reused": True, "state": fetch_full_state()})
+                    return
+
+                # Novo equipamento
+                eq_id = "eq-" + str(int(time.time() * 1000))
+                cur.execute("""
+                    INSERT INTO equipment (id, name, type, serial_number, client_id, user_id, notes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                """, (eq_id, name or f"Equipamento {eq_type}", eq_type, serial, client_id, user_id, notes, now_iso))
+                conn.commit()
+                self._send_json({"ok": True, "equipmentId": eq_id, "reused": False, "state": fetch_full_state()})
+                return
+
+            # 4C. ATUALIZAR / EDITAR EQUIPAMENTO NO INVENTÁRIO
+            if parsed.path == "/api/equipment/update":
+                eq_id = body.get("id")
+                cur.execute("SELECT * FROM equipment WHERE id = ?;", (eq_id,))
+                eq_row = cur.fetchone()
+                if not eq_row:
+                    self._send_json({"ok": False, "error": "Equipamento não encontrado."}, 404)
+                    return
+
+                new_serial = (body.get("serialNumber") or eq_row["serial_number"]).strip().upper()
+                cur.execute("""
+                    UPDATE equipment SET
+                        name = ?,
+                        type = ?,
+                        serial_number = ?,
+                        client_id = ?,
+                        user_id = ?,
+                        notes = ?
+                    WHERE id = ?;
+                """, (
+                    (body.get("name") or eq_row["name"]).strip(),
+                    (body.get("type") or eq_row["type"]).strip(),
+                    new_serial,
+                    (body.get("clientId") if "clientId" in body else (eq_row["client_id"] or "")).strip(),
+                    (body.get("userId") if "userId" in body else (eq_row["user_id"] or "")).strip(),
+                    (body.get("notes") if "notes" in body else (eq_row["notes"] or "")).strip(),
+                    eq_id
+                ))
+                conn.commit()
+                self._send_json({"ok": True, "state": fetch_full_state()})
+                return
+
+            # 5. ABRIR NOVO CHAMADO (COM EQUIPAMENTO + SLA EM DIAS E HORAS ÚTEIS DE EXPEDIENTE)
             if parsed.path == "/api/tickets":
                 cur.execute("SELECT COUNT(*) as cnt FROM tickets;")
                 next_num = 1001 + cur.fetchone()["cnt"]
                 tid = f"CH-{next_num}"
                 now = datetime.now(timezone.utc)
-                sla_hours = float(body.get("slaHours") or 4)
-                due = now + timedelta(hours=sla_hours)
+
+                # Busca expediente configurado no contrato
+                cur.execute("SELECT business_hours_start, business_hours_end, business_days FROM contract WHERE id = 1;")
+                cfg_row = cur.fetchone()
+                bh_start = (cfg_row["business_hours_start"] if cfg_row and "business_hours_start" in cfg_row.keys() else "08:00") or "08:00"
+                bh_end = (cfg_row["business_hours_end"] if cfg_row and "business_hours_end" in cfg_row.keys() else "18:00") or "18:00"
+                bh_days = (cfg_row["business_days"] if cfg_row and "business_days" in cfg_row.keys() else "1,2,3,4,5") or "1,2,3,4,5"
 
                 # Se clientId não veio no body, herda do usuário solicitante
                 client_id = (body.get("clientId") or "").strip()
@@ -731,31 +918,74 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     if ur and ur["client_id"]:
                         client_id = ur["client_id"]
 
+                # Tratamento de Equipamento: Se veio um novo equipamento no corpo do chamado, cadastra ou deduplica
+                equipment_id = (body.get("equipmentId") or "").strip()
+                new_equip_obj = body.get("newEquipment")
+                if isinstance(new_equip_obj, dict) and new_equip_obj.get("serialNumber"):
+                    eq_serial = new_equip_obj.get("serialNumber", "").strip().upper()
+                    cur.execute("SELECT id FROM equipment WHERE UPPER(serial_number) = ?;", (eq_serial,))
+                    eq_found = cur.fetchone()
+                    if eq_found:
+                        equipment_id = eq_found["id"]
+                    else:
+                        equipment_id = "eq-" + str(int(time.time() * 1000))
+                        eq_name = new_equip_obj.get("name", "").strip() or f"Equipamento {new_equip_obj.get('type', 'Desktop')}"
+                        cur.execute("""
+                            INSERT INTO equipment (id, name, type, serial_number, client_id, user_id, notes, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                        """, (
+                            equipment_id,
+                            eq_name,
+                            new_equip_obj.get("type", "Desktop"),
+                            eq_serial,
+                            client_id,
+                            body.get("userId") or "",
+                            new_equip_obj.get("notes", "") or "Cadastrado via chamado " + tid,
+                            now.isoformat()
+                        ))
+
+                # Prazos SLA calculados em horas úteis de expediente
+                sla_hours = float(body.get("slaHours") or 4)
+                first_resp_sla = float(body.get("firstResponseSlaHours") or 1.0)
+                if not body.get("firstResponseSlaHours") and body.get("problemTypeId"):
+                    cur.execute("SELECT first_response_sla_hours FROM problem_types WHERE id = ?;", (body["problemTypeId"],))
+                    prb_row = cur.fetchone()
+                    if prb_row and "first_response_sla_hours" in prb_row.keys() and prb_row["first_response_sla_hours"]:
+                        first_resp_sla = float(prb_row["first_response_sla_hours"])
+
+                due_dt = calculate_business_due(now, sla_hours, bh_start, bh_end, bh_days)
+                first_resp_due_dt = calculate_business_due(now, first_resp_sla, bh_start, bh_end, bh_days)
+
                 tech_val = (body.get("technician") or "Aguardando Direcionamento (Admin)").strip()
                 is_assigned = tech_val.lower() not in ("", "aguardando direcionamento (admin)", "aguardando atribuição", "não atribuído")
                 assigned_at = now.isoformat() if is_assigned else None
                 started_at = None
+                first_responded_at = None
 
                 cur.execute("""
                     INSERT INTO tickets (
-                        id, title, description, user_id, client_id, problem_type_id,
-                        sla_hours, priority, status, technician, hours_spent,
-                        created_at, assigned_at, started_at, due_at, resolved_at, notes_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, 0, ?, ?, ?, ?, NULL, '[]');
+                        id, title, description, user_id, client_id, equipment_id, problem_type_id,
+                        sla_hours, first_response_sla_hours, priority, status, technician, hours_spent,
+                        created_at, assigned_at, started_at, first_response_due_at, first_responded_at, due_at, resolved_at, notes_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Aberto', ?, 0, ?, ?, ?, ?, ?, ?, NULL, '[]');
                 """, (
                     tid,
                     body["title"].strip(),
                     body["description"].strip(),
                     body["userId"],
                     client_id,
+                    equipment_id,
                     body["problemTypeId"],
                     sla_hours,
+                    first_resp_sla,
                     body.get("priority", "Média"),
                     tech_val,
                     now.isoformat(),
                     assigned_at,
                     started_at,
-                    due.isoformat()
+                    first_resp_due_dt.isoformat(),
+                    first_responded_at,
+                    due_dt.isoformat()
                 ))
                 conn.commit()
                 self._send_json({"ok": True, "ticketId": tid, "state": fetch_full_state()})
@@ -774,16 +1004,24 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 new_desc = (body.get("description") or row["description"]).strip()
                 new_user_id = body.get("userId") or row["user_id"]
                 new_client_id = body.get("clientId") if "clientId" in body else (row["client_id"] or "")
+                new_equip_id = body.get("equipmentId") if "equipmentId" in body else ((row["equipment_id"] if "equipment_id" in row.keys() else "") or "")
                 new_prob_id = body.get("problemTypeId") or row["problem_type_id"]
                 new_priority = body.get("priority") or row["priority"]
                 new_sla_hours = float(body.get("slaHours") if "slaHours" in body and body["slaHours"] is not None else row["sla_hours"])
+
+                # Busca configurações de expediente para recalcular vencimento em horas úteis
+                cur.execute("SELECT business_hours_start, business_hours_end, business_days FROM contract WHERE id = 1;")
+                cfg_row = cur.fetchone()
+                bh_start = (cfg_row["business_hours_start"] if cfg_row and "business_hours_start" in cfg_row.keys() else "08:00") or "08:00"
+                bh_end = (cfg_row["business_hours_end"] if cfg_row and "business_hours_end" in cfg_row.keys() else "18:00") or "18:00"
+                bh_days = (cfg_row["business_days"] if cfg_row and "business_days" in cfg_row.keys() else "1,2,3,4,5") or "1,2,3,4,5"
 
                 # Recalcula o vencimento (due_at) caso o SLA em horas tenha sido editado pelo Admin
                 due_at = row["due_at"]
                 if abs(new_sla_hours - float(row["sla_hours"])) > 0.001:
                     try:
                         created_dt = datetime.fromisoformat(row["created_at"])
-                        due_at = (created_dt + timedelta(hours=new_sla_hours)).isoformat()
+                        due_at = calculate_business_due(created_dt, new_sla_hours, bh_start, bh_end, bh_days).isoformat()
                     except Exception:
                         pass
 
@@ -821,6 +1059,15 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 else:
                     started_at = curr_started_at
 
+                # Controle de first_responded_at (cumprimento do SLA de Primeira Resposta)
+                curr_first_resp = row["first_responded_at"] if "first_responded_at" in row.keys() else None
+                if "firstRespondedAt" in body:
+                    first_responded_at = body.get("firstRespondedAt")
+                elif (started_at or new_status == "Em Atendimento") and not curr_first_resp:
+                    first_responded_at = started_at or datetime.now(timezone.utc).isoformat()
+                else:
+                    first_responded_at = curr_first_resp
+
                 resolved_at = row["resolved_at"]
                 if new_status == "Resolvido" and row["status"] != "Resolvido":
                     resolved_at = datetime.now(timezone.utc).isoformat()
@@ -833,6 +1080,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                         description = ?,
                         user_id = ?,
                         client_id = ?,
+                        equipment_id = ?,
                         problem_type_id = ?,
                         sla_hours = ?,
                         priority = ?,
@@ -843,6 +1091,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                         service_performed = ?,
                         assigned_at = ?,
                         started_at = ?,
+                        first_responded_at = ?,
                         due_at = ?,
                         resolved_at = ?
                     WHERE id = ?;
@@ -851,6 +1100,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     new_desc,
                     new_user_id,
                     new_client_id,
+                    new_equip_id,
                     new_prob_id,
                     new_sla_hours,
                     new_priority,
@@ -861,6 +1111,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     new_serv_perf,
                     assigned_at,
                     started_at,
+                    first_responded_at,
                     due_at,
                     resolved_at,
                     tid
@@ -1006,22 +1257,37 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": True, "state": fetch_full_state()})
                 return
 
-            # 7. ADICIONAR NOTA / INTERAÇÃO NO CHAMADO
+            # 7. ADICIONAR NOTA / INTERAÇÃO NO CHAMADO (REGISTRA 1ª RESPOSTA SE FOR DA EQUIPE TÉCNICA)
             if parsed.path == "/api/tickets/note":
                 tid = body["ticketId"]
-                cur.execute("SELECT notes_json FROM tickets WHERE id = ?;", (tid,))
+                cur.execute("SELECT * FROM tickets WHERE id = ?;", (tid,))
                 row = cur.fetchone()
                 if not row:
                     self._send_json({"ok": False, "error": "Chamado não encontrado"}, 404)
                     return
                 notes = json.loads(row["notes_json"] or "[]")
+                now_iso = datetime.now(timezone.utc).isoformat()
+                author_name = body.get("author", "Usuário")
                 notes.append({
                     "id": "nt-" + str(int(time.time() * 1000)),
-                    "author": body.get("author", "Usuário"),
+                    "author": author_name,
                     "text": body["text"].strip(),
-                    "createdAt": datetime.now(timezone.utc).isoformat()
+                    "createdAt": now_iso
                 })
-                cur.execute("UPDATE tickets SET notes_json = ? WHERE id = ?;", (json.dumps(notes, ensure_ascii=False), tid))
+
+                # Se a nota veio de um técnico/admin e o chamado ainda não tem 1ª resposta registrada:
+                is_staff_note = bool(body.get("isStaff")) or "técnico" in author_name.lower() or "admin" in author_name.lower()
+                curr_first_resp = row["first_responded_at"] if "first_responded_at" in row.keys() else None
+                new_first_resp = curr_first_resp
+                if is_staff_note and not curr_first_resp:
+                    new_first_resp = now_iso
+
+                cur.execute("""
+                    UPDATE tickets SET
+                        notes_json = ?,
+                        first_responded_at = ?
+                    WHERE id = ?;
+                """, (json.dumps(notes, ensure_ascii=False), new_first_resp, tid))
                 conn.commit()
                 self._send_json({"ok": True, "state": fetch_full_state()})
                 return
@@ -1030,6 +1296,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
             if parsed.path == "/api/reset":
                 cur.execute("DELETE FROM solutions;")
                 cur.execute("DELETE FROM tickets;")
+                cur.execute("DELETE FROM equipment;")
                 cur.execute("DELETE FROM problem_types;")
                 cur.execute("DELETE FROM users;")
                 cur.execute("DELETE FROM clients;")
@@ -1058,7 +1325,7 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
     def do_DELETE(self):
         parsed = urlparse(self.path)
         parts = parsed.path.strip("/").split("/")
-        # Ex: /api/clients/<id>, /api/users/<id>, /api/problems/<id>, /api/tickets/<id>, /api/solutions/<id>
+        # Ex: /api/clients/<id>, /api/users/<id>, /api/problems/<id>, /api/tickets/<id>, /api/solutions/<id>, /api/equipment/<id>
         if len(parts) == 3 and parts[0] == "api":
             resource, item_id = parts[1], parts[2]
             conn = get_conn()
@@ -1067,6 +1334,8 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 cur.execute("DELETE FROM clients WHERE id = ?;", (item_id,))
             elif resource == "users":
                 cur.execute("DELETE FROM users WHERE id = ?;", (item_id,))
+            elif resource == "equipment":
+                cur.execute("DELETE FROM equipment WHERE id = ?;", (item_id,))
             elif resource == "problems":
                 cur.execute("DELETE FROM problem_types WHERE id = ?;", (item_id,))
             elif resource == "tickets":
