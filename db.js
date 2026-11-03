@@ -1028,14 +1028,6 @@ class DatabaseService {
         this.state.solutions.unshift(solRecord);
       }
     }
-        createdAt: updated.resolvedAt || new Date().toISOString()
-      };
-      if (existingIdx >= 0) {
-        this.state.solutions[existingIdx] = solRecord;
-      } else {
-        this.state.solutions.unshift(solRecord);
-      }
-    }
 
     this.saveLocalCache();
     return updated;

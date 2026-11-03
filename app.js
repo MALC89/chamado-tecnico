@@ -984,6 +984,20 @@ function updateHeaderAndSidebarStats() {
     dot.className = 'w-2 h-2 rounded-full bg-amber-400';
     label.textContent = 'Banco Local (Offline)';
   }
+
+  // Indicador de Horário de Expediente / SLA na Topbar
+  const bhIndicator = document.getElementById('header-business-hours-indicator');
+  const bhText = document.getElementById('header-business-hours-text');
+  if (bhIndicator && bhText) {
+    const bh = isCurrentTimeInBusinessHours(contract);
+    if (bh.isOpen) {
+      bhIndicator.className = 'hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100';
+      bhText.textContent = `Expediente Ativo (${bh.startStr} - ${bh.endStr})`;
+    } else {
+      bhIndicator.className = 'hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100';
+      bhText.textContent = `Fora do Expediente (SLA Pausado)`;
+    }
+  }
 }
 
 function filterTriageTickets() {
@@ -1494,6 +1508,12 @@ function closeNewTicketModal() {
   document.getElementById('modal-new-ticket').classList.add('hidden');
 }
 
+function goToInventoryFromNewTicketModal() {
+  closeNewTicketModal();
+  switchTab('inventory');
+  openNewEquipmentModal();
+}
+
 function onProblemTypeChange() {
   const probId = document.getElementById('ticket-problem').value;
   const problems = window.db.getProblemTypes();
@@ -1519,12 +1539,25 @@ function updateTicketDuePreview() {
   const finalEl = document.getElementById('ticket-due-preview');
   const firstEl = document.getElementById('ticket-first-due-preview');
   const bhEl = document.getElementById('ticket-preview-business-hours');
+  const outAlert = document.getElementById('ticket-out-of-hours-alert');
+  const outExplanation = document.getElementById('ticket-out-of-hours-explanation');
 
   if (finalEl) finalEl.textContent = formatDateTimeBR(dueFinal.toISOString());
   if (firstEl) firstEl.textContent = formatDateTimeBR(dueFirst.toISOString());
   if (bhEl) {
     const daysLabel = (contract.businessDays || '1,2,3,4,5') === '1,2,3,4,5,6' ? 'Seg a Sáb' : (contract.businessDays || '').length > 10 ? 'Todos os dias' : 'Seg a Sex';
     bhEl.textContent = `${contract.businessHoursStart || '08:00'} às ${contract.businessHoursEnd || '18:00'} (${daysLabel})`;
+  }
+
+  const bhStatus = isCurrentTimeInBusinessHours(contract);
+  if (outAlert && outExplanation) {
+    if (!bhStatus.isOpen) {
+      outAlert.classList.remove('hidden');
+      const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      outExplanation.innerHTML = `O suporte está fechado neste momento (${timeStr}). O relógio de SLA só começará a correr no próximo dia útil às <strong>${bhStatus.startStr}</strong>. Primeira resposta até <strong>${formatDateTimeBR(dueFirst.toISOString())}</strong>. O SLA <strong>NÃO</strong> estoura durante a noite ou fins de semana.`;
+    } else {
+      outAlert.classList.add('hidden');
+    }
   }
 }
 
@@ -1634,6 +1667,10 @@ async function handleCreateTicket(e) {
   }
 
   try {
+    const contract = window.db.getContract() || {};
+    const dueFinal = window.db.calculateBusinessDue(new Date(), slaHours, contract);
+    const dueFirst = window.db.calculateBusinessDue(new Date(), firstResponseSlaHours, contract);
+
     const created = await window.db.addTicket({
       userId,
       clientId,
@@ -1642,6 +1679,8 @@ async function handleCreateTicket(e) {
       problemTypeId,
       slaHours,
       firstResponseSlaHours,
+      dueAt: dueFinal.toISOString(),
+      firstResponseDueAt: dueFirst.toISOString(),
       priority,
       technician,
       title,
@@ -2044,24 +2083,6 @@ function applyCorrelatedSolutionToActiveTicket(idx) {
   if (servEl) servEl.value = item.servicePerformed || '';
 
   showToast(`Laudo anterior copiado para os campos de Diagnóstico e Serviço!`, 'success');
-}
-
-    // Técnico não pode alterar o responsável para outro técnico se não for Admin
-    document.getElementById('detail-tech').readOnly = !isAdmin;
-
-    // Apenas Admin pode excluir chamados
-    if (deleteBtn) {
-      if (isAdmin) deleteBtn.classList.remove('hidden');
-      else deleteBtn.classList.add('hidden');
-    }
-  } else {
-    adminForm.classList.add('hidden');
-  }
-
-  updateDetailModalTimelineAndAccept(ticket);
-  renderTicketNotes(ticket);
-  document.getElementById('modal-ticket-detail').classList.remove('hidden');
-  if (window.lucide) lucide.createIcons();
 }
 
 /**
@@ -3738,16 +3759,142 @@ function loadSettingsForms() {
   const bhStartInput = document.getElementById('cfg-bh-start');
   const bhEndInput = document.getElementById('cfg-bh-end');
   const bhDaysInput = document.getElementById('cfg-bh-days');
-  const bhBadgeLabel = document.getElementById('business-hours-badge-label');
   if (bhStartInput) bhStartInput.value = c.businessHoursStart || '08:00';
   if (bhEndInput) bhEndInput.value = c.businessHoursEnd || '18:00';
   if (bhDaysInput) bhDaysInput.value = c.businessDays || '1,2,3,4,5';
-  if (bhBadgeLabel) {
-    const daysLabel = (c.businessDays || '1,2,3,4,5') === '1,2,3,4,5,6' ? 'Seg a Sáb' : (c.businessDays || '').length > 10 ? 'Todos os dias' : 'Seg a Sex';
-    bhBadgeLabel.textContent = `Expediente: ${c.businessHoursStart || '08:00'} às ${c.businessHoursEnd || '18:00'} (${daysLabel})`;
+
+  updateBusinessHoursCalculations();
+  renderClientsList();
+}
+
+function updateBusinessHoursCalculations() {
+  const startInput = document.getElementById('cfg-bh-start');
+  const endInput = document.getElementById('cfg-bh-end');
+  const daysInput = document.getElementById('cfg-bh-days');
+  if (!startInput || !endInput || !daysInput) return;
+
+  const startVal = startInput.value || '08:00';
+  const endVal = endInput.value || '18:00';
+  const daysVal = daysInput.value || '1,2,3,4,5';
+
+  // Atualiza hint de duração diária
+  const [sh, sm] = startVal.split(':').map(Number);
+  const [eh, em] = endVal.split(':').map(Number);
+  const diffMins = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
+  const diffHours = (diffMins / 60).toFixed(1).replace('.0', '');
+  const durationHint = document.getElementById('bh-duration-hint');
+  if (durationHint) {
+    durationHint.textContent = `${diffHours}h úteis/dia`;
   }
 
-  renderClientsList();
+  // Atualiza botões dos dias 1 a 7
+  const allowedDays = daysVal.split(',').map((x) => Number(x.trim())).filter((x) => !isNaN(x) && x >= 1 && x <= 7);
+  for (let d = 1; d <= 7; d++) {
+    const btn = document.getElementById(`btn-day-${d}`);
+    if (btn) {
+      if (allowedDays.includes(d)) {
+        btn.className = 'bh-day-btn py-2 px-1 text-center rounded-lg border text-xs font-bold transition-all cursor-pointer bg-indigo-600 text-white border-indigo-700 shadow-2xs';
+      } else {
+        btn.className = 'bh-day-btn py-2 px-1 text-center rounded-lg border text-xs font-bold transition-all cursor-pointer bg-slate-100 text-slate-400 border-slate-200';
+      }
+    }
+  }
+
+  // Resumo dos dias
+  const summaryEl = document.getElementById('cfg-bh-days-summary');
+  if (summaryEl) {
+    if (allowedDays.length === 5 && !allowedDays.includes(6) && !allowedDays.includes(7)) {
+      summaryEl.textContent = '5 dias úteis (Segunda a Sexta)';
+    } else if (allowedDays.length === 6 && !allowedDays.includes(7)) {
+      summaryEl.textContent = '6 dias úteis (Segunda a Sábado)';
+    } else if (allowedDays.length === 7) {
+      summaryEl.textContent = '7 dias por semana (Regime 24/7)';
+    } else {
+      summaryEl.textContent = `${allowedDays.length} dias da semana selecionados`;
+    }
+  }
+
+  // Badge no topo do painel
+  const badgeLabel = document.getElementById('business-hours-badge-label');
+  if (badgeLabel) {
+    const daysLabel = allowedDays.length === 7 ? 'Todos os dias' : allowedDays.length === 6 ? 'Seg a Sáb' : 'Seg a Sex';
+    badgeLabel.textContent = `Expediente: ${startVal} às ${endVal} (${daysLabel})`;
+  }
+
+  // Simulação Interativa ao Vivo com a hora atual
+  const simCurrentTime = document.getElementById('sim-current-time');
+  const simBadge = document.getElementById('sim-status-badge');
+  const simExplanation = document.getElementById('sim-explanation');
+
+  if (simCurrentTime && simBadge && simExplanation) {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    simCurrentTime.textContent = timeStr;
+
+    const mockConfig = {
+      businessHoursStart: startVal,
+      businessHoursEnd: endVal,
+      businessDays: daysVal
+    };
+    const bhStatus = isCurrentTimeInBusinessHours(mockConfig);
+
+    const simFirstDue = window.db.calculateBusinessDue(now, 1.0, mockConfig);
+    const simResDue = window.db.calculateBusinessDue(now, 4.0, mockConfig);
+
+    if (bhStatus.isOpen) {
+      simBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300';
+      simBadge.textContent = '🟢 Expediente Comercial Aberto Agora';
+      simExplanation.innerHTML = `Neste momento estamos <strong>dentro do horário útil de atendimento</strong> (${startVal} às ${endVal}). Um chamado aberto agora às ${timeStr} terá 1ª resposta esperada até <strong>${formatDateTimeBR(simFirstDue.toISOString())}</strong> e prazo de resolução até <strong>${formatDateTimeBR(simResDue.toISOString())}</strong>.`;
+    } else {
+      simBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
+      simBadge.textContent = '🌙 Suporte Fechado Agora (SLA Pausado)';
+      simExplanation.innerHTML = `Neste momento estamos <strong>fora do expediente comercial</strong>. Se você abrir um chamado agora às ${timeStr}, o cronômetro do SLA <strong>NÃO CORRERÁ DURANTE A NOITE</strong>. O prazo só começará a ser contado no próximo dia útil às <strong>${startVal}</strong>. A 1ª Resposta vencerá em <strong>${formatDateTimeBR(simFirstDue.toISOString())}</strong> e a Resolução em <strong>${formatDateTimeBR(simResDue.toISOString())}</strong>.`;
+    }
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function toggleBusinessDay(dayNum) {
+  const daysInput = document.getElementById('cfg-bh-days');
+  if (!daysInput) return;
+  const current = daysInput.value.split(',').map((x) => Number(x.trim())).filter((x) => !isNaN(x) && x >= 1 && x <= 7);
+  let updated = [];
+  if (current.includes(dayNum)) {
+    if (current.length <= 1) {
+      showToast('Selecione pelo menos 1 dia útil de atendimento.', 'error');
+      return;
+    }
+    updated = current.filter((d) => d !== dayNum);
+  } else {
+    updated = [...current, dayNum].sort((a, b) => a - b);
+  }
+  daysInput.value = updated.join(',');
+  updateBusinessHoursCalculations();
+}
+
+function applyBusinessHoursPreset(presetKey) {
+  const startInput = document.getElementById('cfg-bh-start');
+  const endInput = document.getElementById('cfg-bh-end');
+  const daysInput = document.getElementById('cfg-bh-days');
+  if (!startInput || !endInput || !daysInput) return;
+
+  const presets = {
+    comercial: { start: '08:00', end: '18:00', days: '1,2,3,4,5', label: 'Comercial Padrão (08h às 18h • Seg a Sex)' },
+    flex: { start: '09:00', end: '18:00', days: '1,2,3,4,5', label: 'Comercial Flex (09h às 18h • Seg a Sex)' },
+    estendido: { start: '08:00', end: '20:00', days: '1,2,3,4,5', label: 'Suporte Estendido (08h às 20h • Seg a Sex)' },
+    plantao: { start: '00:00', end: '23:59', days: '1,2,3,4,5,6,7', label: 'Plantão 24/7 (Todos os dias)' }
+  };
+
+  const p = presets[presetKey];
+  if (!p) return;
+
+  startInput.value = p.start;
+  endInput.value = p.end;
+  daysInput.value = p.days;
+
+  updateBusinessHoursCalculations();
+  showToast(`Predefinição aplicada: ${p.label}`);
 }
 
 async function handleSaveBusinessHours(e) {
@@ -4738,6 +4885,11 @@ window.deleteEquipmentConfirm = deleteEquipmentConfirm;
 window.openEquipmentHistory = openEquipmentHistory;
 window.closeEquipmentHistoryModal = closeEquipmentHistoryModal;
 window.onEquipFormClientChange = onEquipFormClientChange;
+window.goToInventoryFromNewTicketModal = goToInventoryFromNewTicketModal;
+window.toggleBusinessDay = toggleBusinessDay;
+window.applyBusinessHoursPreset = applyBusinessHoursPreset;
+window.updateBusinessHoursCalculations = updateBusinessHoursCalculations;
+window.toggleNewTicketEquipMode = toggleNewTicketEquipMode;
 
 // ==========================================
 // UTILITÁRIOS

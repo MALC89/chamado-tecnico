@@ -953,8 +953,16 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     if prb_row and "first_response_sla_hours" in prb_row.keys() and prb_row["first_response_sla_hours"]:
                         first_resp_sla = float(prb_row["first_response_sla_hours"])
 
-                due_dt = calculate_business_due(now, sla_hours, bh_start, bh_end, bh_days)
-                first_resp_due_dt = calculate_business_due(now, first_resp_sla, bh_start, bh_end, bh_days)
+                due_dt_str = body.get("dueAt")
+                first_resp_due_str = body.get("firstResponseDueAt")
+
+                if not due_dt_str:
+                    due_dt = calculate_business_due(now, sla_hours, bh_start, bh_end, bh_days)
+                    due_dt_str = due_dt.isoformat()
+
+                if not first_resp_due_str:
+                    first_resp_due_dt = calculate_business_due(now, first_resp_sla, bh_start, bh_end, bh_days)
+                    first_resp_due_str = first_resp_due_dt.isoformat()
 
                 tech_val = (body.get("technician") or "Aguardando Direcionamento (Admin)").strip()
                 is_assigned = tech_val.lower() not in ("", "aguardando direcionamento (admin)", "aguardando atribuição", "não atribuído")
@@ -983,9 +991,9 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     now.isoformat(),
                     assigned_at,
                     started_at,
-                    first_resp_due_dt.isoformat(),
+                    first_resp_due_str,
                     first_responded_at,
-                    due_dt.isoformat()
+                    due_dt_str
                 ))
                 conn.commit()
                 self._send_json({"ok": True, "ticketId": tid, "state": fetch_full_state()})

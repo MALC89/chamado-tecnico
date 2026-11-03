@@ -1,6 +1,6 @@
 # 🛠️ ServiceDesk Pro — Sistema de Chamados Técnicos, SLA & Banco de Soluções
 
-![Versão](https://img.shields.io/badge/versão-v1.8.0-4f46e5)
+![Versão](https://img.shields.io/badge/versão-v1.8.1-4f46e5)
 ![Backend](https://img.shields.io/badge/Python_3-SQLite_WAL-10b981)
 ![Licença](https://img.shields.io/badge/uso-Corporativo_/_Contratos_Fixos-f59e0b)
 
@@ -120,6 +120,7 @@ cd /opt/chamado-tecnico && git pull origin main && sudo bash configurar-dominio.
 
 | Versão | Data | Descrição das Entregas |
 | :--- | :--- | :--- |
+| **`v1.8.1`** | Nov/2026 | **Correção de Carregamento do Inventário, Painel Interativo de Expediente & SLA Noturno**: Correção crítica de sintaxe que impedia abertura do modal de equipamentos e navegação; painel interativo de horários com 4 presets (Comercial, Flex, Estendido, Plantão 24/7); seletores toggle de dias da semana (Seg a Dom); simulador interativo de abertura fora do expediente garantindo que chamados abertos à noite não estourem o SLA; indicador em tempo real de status do suporte no topo; atalho para o inventário dentro do novo chamado. |
 | **`v1.8.0`** | Nov/2026 | **Inventário de Equipamentos, Correlação Automática de Soluções, Expediente Comercial & SLA Duplo**: Gestão de ativos com deduplicação por número de série/Service Tag; associação de equipamentos no chamado; correlação automática de soluções e manutenções anteriores no atendimento; configuração de horário de expediente com pausa do SLA fora do horário comercial e finais de semana; SLA de 1ª Resposta vs Resolução. |
 | **`v1.7.0`** | Out/2026 | **Aceite do Técnico, Início de Atendimento & Segurança de Login**: Chamados direcionados mantêm status `Aberto` até aceite do técnico; novo botão e painel `Iniciar Atendimento`; registro dos timestamps `assignedAt` e `startedAt` com linha do tempo de 4 etapas; remoção do reset público de senhas na tela de login (apenas Administrador no painel). |
 | **`v1.6.0`** | Out/2026 | **Sincronização Automática em Tempo Real (Live Sync)**: Atualização automática sem recarregar a página (`F5`) quando o Admin direciona chamados para o Técnico, quando novos chamados são abertos e quando o Técnico finaliza/atualiza o chamado (sincronizando na hora a tela do Admin e do Solicitante). |
