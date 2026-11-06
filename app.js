@@ -664,6 +664,9 @@ function isCurrentTimeInBusinessHours(contract = null) {
   const startStr = cfg.businessHoursStart || '08:00';
   const endStr = cfg.businessHoursEnd || '18:00';
   const daysStr = cfg.businessDays || '1,2,3,4,5';
+  const lunchEnabled = cfg.lunchBreakEnabled !== false && cfg.lunchBreakEnabled !== 0 && cfg.lunchBreakEnabled !== '0';
+  const lunchStartStr = cfg.lunchStart || '12:00';
+  const lunchEndStr = cfg.lunchEnd || '13:00';
 
   let sh = 8, sm = 0, eh = 18, em = 0;
   try {
@@ -672,6 +675,29 @@ function isCurrentTimeInBusinessHours(contract = null) {
     if (!isNaN(pSh)) { sh = pSh; sm = pSm || 0; }
     if (!isNaN(pEh)) { eh = pEh; em = pEm || 0; }
   } catch (_) {}
+
+  let lsh = 12, lsm = 0, leh = 13, lem = 0, hasLunch = Boolean(lunchEnabled);
+  if (hasLunch) {
+    try {
+      const [pLsh, pLsm] = lunchStartStr.split(':').map(Number);
+      const [pLeh, pLem] = lunchEndStr.split(':').map(Number);
+      if (!isNaN(pLsh) && !isNaN(pLeh)) {
+        lsh = pLsh; lsm = pLsm || 0;
+        leh = pLeh; lem = pLem || 0;
+        const openM = sh * 60 + sm;
+        const closeM = eh * 60 + em;
+        const lOpenM = lsh * 60 + lsm;
+        const lCloseM = leh * 60 + lem;
+        if (!(openM < lOpenM && lOpenM < lCloseM && lCloseM < closeM)) {
+          hasLunch = false;
+        }
+      } else {
+        hasLunch = false;
+      }
+    } catch (_) {
+      hasLunch = false;
+    }
+  }
 
   const allowedDays = daysStr.split(',').map((x) => Number(x.trim())).filter((x) => !isNaN(x) && x >= 1 && x <= 7);
   const validDays = allowedDays.length > 0 ? allowedDays : [1, 2, 3, 4, 5];
@@ -683,12 +709,20 @@ function isCurrentTimeInBusinessHours(contract = null) {
   const openMin = sh * 60 + sm;
   const closeMin = eh * 60 + em;
 
-  const isOpen = validDays.includes(isoDay) && currMin >= openMin && currMin < closeMin;
+  const isDayValid = validDays.includes(isoDay);
+  const isWithinWorkHours = currMin >= openMin && currMin < closeMin;
+  const isLunch = hasLunch && isDayValid && currMin >= (lsh * 60 + lsm) && currMin < (leh * 60 + lem);
+  const isOpen = isDayValid && isWithinWorkHours && !isLunch;
+
   return {
     isOpen,
+    isLunch,
     startStr,
     endStr,
-    daysStr
+    daysStr,
+    lunchEnabled: hasLunch,
+    lunchStartStr,
+    lunchEndStr
   };
 }
 
@@ -735,10 +769,19 @@ function evaluateTicketSla(ticket) {
       };
     } else {
       const leftMin = Math.round(diffRespMs / 60000);
+      let pLabel = `1ª Resposta em até ${formatDurationMinutes(leftMin)}`;
+      let pClass = 'bg-indigo-100 text-indigo-800 border-indigo-300';
+      if (bhStatus.isLunch) {
+        pLabel = `🍽️ Almoço • 1ª Resposta após ${bhStatus.lunchEndStr}`;
+        pClass = 'bg-amber-100 text-amber-900 border-amber-300';
+      } else if (!bhStatus.isOpen) {
+        pLabel = `1ª Resposta em horário útil (SLA Pausado)`;
+        pClass = 'bg-amber-50 text-amber-900 border-amber-300';
+      }
       firstResponseResult = {
-        status: 'PENDING',
-        label: `1ª Resposta em até ${formatDurationMinutes(leftMin)}`,
-        badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+        status: !bhStatus.isOpen ? 'PAUSED' : 'PENDING',
+        label: pLabel,
+        badgeClass: pClass,
         metSla: true
       };
     }
@@ -781,10 +824,12 @@ function evaluateTicketSla(ticket) {
   }
 
   const leftMin = Math.round(diffMs / 60000);
+  const pauseSuffix = bhStatus.isLunch ? ' • Pausa de Almoço' : isPaused ? ' • Expediente Pausado' : '';
+
   if (remainingRatio <= 0.25 || leftMin <= 45) {
     return {
       code: 'WARNING',
-      label: isPaused ? `Vence em ${formatDurationMinutes(leftMin)} (Expediente Pausado)` : `Vence em ${formatDurationMinutes(leftMin)}`,
+      label: `Vence em ${formatDurationMinutes(leftMin)}${pauseSuffix}`,
       badgeClass: 'bg-amber-100 text-amber-800 border-amber-300',
       icon: 'clock-alert',
       metSla: true,
@@ -795,7 +840,7 @@ function evaluateTicketSla(ticket) {
 
   return {
     code: 'OK',
-    label: isPaused ? `No prazo (${formatDurationMinutes(leftMin)} restantes • Fora do Expediente)` : `No prazo (${formatDurationMinutes(leftMin)} restantes)`,
+    label: `No prazo (${formatDurationMinutes(leftMin)} restantes${pauseSuffix})`,
     badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     icon: 'clock',
     metSla: true,
@@ -990,11 +1035,14 @@ function updateHeaderAndSidebarStats() {
   const bhText = document.getElementById('header-business-hours-text');
   if (bhIndicator && bhText) {
     const bh = isCurrentTimeInBusinessHours(contract);
-    if (bh.isOpen) {
+    if (bh.isLunch) {
+      bhIndicator.className = 'hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100';
+      bhText.textContent = `Pausa de Almoço (SLA Pausado até ${bh.lunchEndStr})`;
+    } else if (bh.isOpen) {
       bhIndicator.className = 'hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100';
       bhText.textContent = `Expediente Ativo (${bh.startStr} - ${bh.endStr})`;
     } else {
-      bhIndicator.className = 'hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100';
+      bhIndicator.className = 'hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200';
       bhText.textContent = `Fora do Expediente (SLA Pausado)`;
     }
   }
@@ -1546,12 +1594,17 @@ function updateTicketDuePreview() {
   if (firstEl) firstEl.textContent = formatDateTimeBR(dueFirst.toISOString());
   if (bhEl) {
     const daysLabel = (contract.businessDays || '1,2,3,4,5') === '1,2,3,4,5,6' ? 'Seg a Sáb' : (contract.businessDays || '').length > 10 ? 'Todos os dias' : 'Seg a Sex';
-    bhEl.textContent = `${contract.businessHoursStart || '08:00'} às ${contract.businessHoursEnd || '18:00'} (${daysLabel})`;
+    const lunchInfo = contract.lunchBreakEnabled !== false && contract.lunchStart ? ` (Almoço: ${contract.lunchStart} às ${contract.lunchEnd || '13:00'})` : '';
+    bhEl.textContent = `${contract.businessHoursStart || '08:00'} às ${contract.businessHoursEnd || '18:00'} (${daysLabel}${lunchInfo})`;
   }
 
   const bhStatus = isCurrentTimeInBusinessHours(contract);
   if (outAlert && outExplanation) {
-    if (!bhStatus.isOpen) {
+    if (bhStatus.isLunch) {
+      outAlert.classList.remove('hidden');
+      const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      outExplanation.innerHTML = `O suporte está em <strong>intervalo de almoço</strong> neste momento (${timeStr}). O relógio de SLA está <strong>pausado</strong> e só começará a correr às <strong>${bhStatus.lunchEndStr}</strong>. Primeira resposta até <strong>${formatDateTimeBR(dueFirst.toISOString())}</strong>.`;
+    } else if (!bhStatus.isOpen) {
       outAlert.classList.remove('hidden');
       const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       outExplanation.innerHTML = `O suporte está fechado neste momento (${timeStr}). O relógio de SLA só começará a correr no próximo dia útil às <strong>${bhStatus.startStr}</strong>. Primeira resposta até <strong>${formatDateTimeBR(dueFirst.toISOString())}</strong>. O SLA <strong>NÃO</strong> estoura durante a noite ou fins de semana.`;
@@ -1803,7 +1856,10 @@ function openDetailModal(ticketId) {
   const bhBadge = document.getElementById('detail-business-hours-badge');
   if (bhBadge) {
     const bhStatus = isCurrentTimeInBusinessHours(contract);
-    if (bhStatus.isOpen) {
+    if (bhStatus.isLunch) {
+      bhBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
+      bhBadge.textContent = `Pausa de Almoço (até ${bhStatus.lunchEndStr})`;
+    } else if (bhStatus.isOpen) {
       bhBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800';
       bhBadge.textContent = 'Expediente Ativo';
     } else {
@@ -3759,32 +3815,87 @@ function loadSettingsForms() {
   const bhStartInput = document.getElementById('cfg-bh-start');
   const bhEndInput = document.getElementById('cfg-bh-end');
   const bhDaysInput = document.getElementById('cfg-bh-days');
+  const lunchEnabledInput = document.getElementById('cfg-lunch-enabled');
+  const lunchStartInput = document.getElementById('cfg-lunch-start');
+  const lunchEndInput = document.getElementById('cfg-lunch-end');
+
   if (bhStartInput) bhStartInput.value = c.businessHoursStart || '08:00';
   if (bhEndInput) bhEndInput.value = c.businessHoursEnd || '18:00';
   if (bhDaysInput) bhDaysInput.value = c.businessDays || '1,2,3,4,5';
+  if (lunchEnabledInput) lunchEnabledInput.checked = c.lunchBreakEnabled !== false && c.lunchBreakEnabled !== 0 && c.lunchBreakEnabled !== '0';
+  if (lunchStartInput) lunchStartInput.value = c.lunchStart || '12:00';
+  if (lunchEndInput) lunchEndInput.value = c.lunchEnd || '13:00';
 
+  toggleLunchBreakFields();
   updateBusinessHoursCalculations();
   renderClientsList();
+}
+
+function toggleLunchBreakFields() {
+  const enabled = document.getElementById('cfg-lunch-enabled')?.checked;
+  const fields = document.getElementById('cfg-lunch-fields');
+  const badge = document.getElementById('lunch-duration-badge');
+  if (fields) {
+    if (enabled) {
+      fields.classList.remove('opacity-40', 'pointer-events-none');
+    } else {
+      fields.classList.add('opacity-40', 'pointer-events-none');
+    }
+  }
+  if (badge && !enabled) {
+    badge.className = 'px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200';
+    badge.textContent = 'Sem pausa de almoço';
+  }
+  updateBusinessHoursCalculations();
 }
 
 function updateBusinessHoursCalculations() {
   const startInput = document.getElementById('cfg-bh-start');
   const endInput = document.getElementById('cfg-bh-end');
   const daysInput = document.getElementById('cfg-bh-days');
+  const lunchEnabledInput = document.getElementById('cfg-lunch-enabled');
+  const lunchStartInput = document.getElementById('cfg-lunch-start');
+  const lunchEndInput = document.getElementById('cfg-lunch-end');
   if (!startInput || !endInput || !daysInput) return;
 
   const startVal = startInput.value || '08:00';
   const endVal = endInput.value || '18:00';
   const daysVal = daysInput.value || '1,2,3,4,5';
+  const lunchEnabled = lunchEnabledInput ? lunchEnabledInput.checked : true;
+  const lunchStartVal = (lunchStartInput ? lunchStartInput.value : '') || '12:00';
+  const lunchEndVal = (lunchEndInput ? lunchEndInput.value : '') || '13:00';
 
   // Atualiza hint de duração diária
   const [sh, sm] = startVal.split(':').map(Number);
   const [eh, em] = endVal.split(':').map(Number);
-  const diffMins = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
-  const diffHours = (diffMins / 60).toFixed(1).replace('.0', '');
+  const totalMins = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
+
+  let lunchMins = 0;
+  if (lunchEnabled) {
+    const [lsh, lsm] = lunchStartVal.split(':').map(Number);
+    const [leh, lem] = lunchEndVal.split(':').map(Number);
+    if (!isNaN(lsh) && !isNaN(leh)) {
+      lunchMins = Math.max(0, (leh * 60 + (lem || 0)) - (lsh * 60 + (lsm || 0)));
+    }
+  }
+
+  const netMins = Math.max(0, totalMins - lunchMins);
+  const netHours = (netMins / 60).toFixed(1).replace('.0', '');
   const durationHint = document.getElementById('bh-duration-hint');
   if (durationHint) {
-    durationHint.textContent = `${diffHours}h úteis/dia`;
+    durationHint.textContent = `${netHours}h úteis líquidas/dia`;
+  }
+
+  const lunchDurationBadge = document.getElementById('lunch-duration-badge');
+  if (lunchDurationBadge) {
+    if (lunchEnabled && lunchMins > 0) {
+      const lHours = (lunchMins / 60).toFixed(1).replace('.0', '');
+      lunchDurationBadge.className = 'px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-200';
+      lunchDurationBadge.textContent = `Pausa de ${lHours}h (${lunchStartVal} às ${lunchEndVal})`;
+    } else {
+      lunchDurationBadge.className = 'px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200';
+      lunchDurationBadge.textContent = 'Sem pausa de almoço';
+    }
   }
 
   // Atualiza botões dos dias 1 a 7
@@ -3818,7 +3929,8 @@ function updateBusinessHoursCalculations() {
   const badgeLabel = document.getElementById('business-hours-badge-label');
   if (badgeLabel) {
     const daysLabel = allowedDays.length === 7 ? 'Todos os dias' : allowedDays.length === 6 ? 'Seg a Sáb' : 'Seg a Sex';
-    badgeLabel.textContent = `Expediente: ${startVal} às ${endVal} (${daysLabel})`;
+    const lunchInfo = lunchEnabled && lunchMins > 0 ? ` • Almoço ${lunchStartVal}-${lunchEndVal}` : '';
+    badgeLabel.textContent = `Expediente: ${startVal} às ${endVal} (${daysLabel}${lunchInfo})`;
   }
 
   // Simulação Interativa ao Vivo com a hora atual
@@ -3834,17 +3946,25 @@ function updateBusinessHoursCalculations() {
     const mockConfig = {
       businessHoursStart: startVal,
       businessHoursEnd: endVal,
-      businessDays: daysVal
+      businessDays: daysVal,
+      lunchBreakEnabled: lunchEnabled,
+      lunchStart: lunchStartVal,
+      lunchEnd: lunchEndVal
     };
     const bhStatus = isCurrentTimeInBusinessHours(mockConfig);
 
     const simFirstDue = window.db.calculateBusinessDue(now, 1.0, mockConfig);
     const simResDue = window.db.calculateBusinessDue(now, 4.0, mockConfig);
 
-    if (bhStatus.isOpen) {
+    if (bhStatus.isLunch) {
+      simBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
+      simBadge.textContent = '🍽️ Intervalo de Almoço Agora (SLA Pausado)';
+      simExplanation.innerHTML = `Neste momento estamos na <strong>pausa de almoço da equipe</strong> (${lunchStartVal} às ${lunchEndVal}). Se abrir um chamado agora às ${timeStr}, o cronômetro do SLA <strong>NÃO CORRE DURANTE O ALMOÇO</strong>. O prazo só iniciará às <strong>${lunchEndVal}</strong>. A 1ª Resposta vencerá às <strong>${formatDateTimeBR(simFirstDue.toISOString())}</strong> e a Resolução às <strong>${formatDateTimeBR(simResDue.toISOString())}</strong>.`;
+    } else if (bhStatus.isOpen) {
       simBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300';
       simBadge.textContent = '🟢 Expediente Comercial Aberto Agora';
-      simExplanation.innerHTML = `Neste momento estamos <strong>dentro do horário útil de atendimento</strong> (${startVal} às ${endVal}). Um chamado aberto agora às ${timeStr} terá 1ª resposta esperada até <strong>${formatDateTimeBR(simFirstDue.toISOString())}</strong> e prazo de resolução até <strong>${formatDateTimeBR(simResDue.toISOString())}</strong>.`;
+      const lunchNote = lunchEnabled ? ` (se o chamado cruzar o almoço de ${lunchStartVal} às ${lunchEndVal}, o tempo de pausa é somado automaticamente)` : '';
+      simExplanation.innerHTML = `Neste momento estamos <strong>dentro do horário útil de atendimento</strong> (${startVal} às ${endVal}). Um chamado aberto agora às ${timeStr} terá 1ª resposta esperada até <strong>${formatDateTimeBR(simFirstDue.toISOString())}</strong> e prazo de resolução até <strong>${formatDateTimeBR(simResDue.toISOString())}</strong>${lunchNote}.`;
     } else {
       simBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
       simBadge.textContent = '🌙 Suporte Fechado Agora (SLA Pausado)';
@@ -3877,13 +3997,16 @@ function applyBusinessHoursPreset(presetKey) {
   const startInput = document.getElementById('cfg-bh-start');
   const endInput = document.getElementById('cfg-bh-end');
   const daysInput = document.getElementById('cfg-bh-days');
+  const lunchEnabledInput = document.getElementById('cfg-lunch-enabled');
+  const lunchStartInput = document.getElementById('cfg-lunch-start');
+  const lunchEndInput = document.getElementById('cfg-lunch-end');
   if (!startInput || !endInput || !daysInput) return;
 
   const presets = {
-    comercial: { start: '08:00', end: '18:00', days: '1,2,3,4,5', label: 'Comercial Padrão (08h às 18h • Seg a Sex)' },
-    flex: { start: '09:00', end: '18:00', days: '1,2,3,4,5', label: 'Comercial Flex (09h às 18h • Seg a Sex)' },
-    estendido: { start: '08:00', end: '20:00', days: '1,2,3,4,5', label: 'Suporte Estendido (08h às 20h • Seg a Sex)' },
-    plantao: { start: '00:00', end: '23:59', days: '1,2,3,4,5,6,7', label: 'Plantão 24/7 (Todos os dias)' }
+    comercial: { start: '08:00', end: '18:00', days: '1,2,3,4,5', lunch: true, lStart: '12:00', lEnd: '13:00', label: 'Comercial Padrão (08h-18h • Almoço 12h-13h • Seg a Sex)' },
+    flex: { start: '09:00', end: '18:00', days: '1,2,3,4,5', lunch: true, lStart: '12:00', lEnd: '13:00', label: 'Comercial Flex (09h-18h • Almoço 12h-13h • Seg a Sex)' },
+    estendido: { start: '08:00', end: '20:00', days: '1,2,3,4,5', lunch: true, lStart: '12:00', lEnd: '13:00', label: 'Suporte Estendido (08h-20h • Almoço 12h-13h • Seg a Sex)' },
+    plantao: { start: '00:00', end: '23:59', days: '1,2,3,4,5,6,7', lunch: false, lStart: '12:00', lEnd: '13:00', label: 'Plantão 24/7 (Sem pausa • Todos os dias)' }
   };
 
   const p = presets[presetKey];
@@ -3892,7 +4015,11 @@ function applyBusinessHoursPreset(presetKey) {
   startInput.value = p.start;
   endInput.value = p.end;
   daysInput.value = p.days;
+  if (lunchEnabledInput) lunchEnabledInput.checked = p.lunch;
+  if (lunchStartInput) lunchStartInput.value = p.lStart;
+  if (lunchEndInput) lunchEndInput.value = p.lEnd;
 
+  toggleLunchBreakFields();
   updateBusinessHoursCalculations();
   showToast(`Predefinição aplicada: ${p.label}`);
 }
@@ -3902,15 +4029,21 @@ async function handleSaveBusinessHours(e) {
   const start = document.getElementById('cfg-bh-start')?.value || '08:00';
   const end = document.getElementById('cfg-bh-end')?.value || '18:00';
   const days = document.getElementById('cfg-bh-days')?.value || '1,2,3,4,5';
+  const lunchEnabled = document.getElementById('cfg-lunch-enabled')?.checked ?? true;
+  const lunchStart = document.getElementById('cfg-lunch-start')?.value || '12:00';
+  const lunchEnd = document.getElementById('cfg-lunch-end')?.value || '13:00';
 
   try {
     await window.db.updateContract({
       businessHoursStart: start,
       businessHoursEnd: end,
-      businessDays: days
+      businessDays: days,
+      lunchBreakEnabled: lunchEnabled,
+      lunchStart,
+      lunchEnd
     });
     refreshAllViews();
-    showToast('Regras de horário de expediente e cálculo de SLA atualizadas com sucesso!');
+    showToast('Regras de horário de expediente, pausa de almoço e SLA atualizadas com sucesso!');
   } catch (err) {
     showToast(err.message || 'Erro ao salvar horário de atendimento.', 'error');
   }
@@ -4890,6 +5023,7 @@ window.toggleBusinessDay = toggleBusinessDay;
 window.applyBusinessHoursPreset = applyBusinessHoursPreset;
 window.updateBusinessHoursCalculations = updateBusinessHoursCalculations;
 window.toggleNewTicketEquipMode = toggleNewTicketEquipMode;
+window.toggleLunchBreakFields = toggleLunchBreakFields;
 
 // ==========================================
 // UTILITÁRIOS

@@ -27,7 +27,10 @@ const EMPTY_DATA = {
     themeColor: 'indigo',
     businessHoursStart: '08:00',
     businessHoursEnd: '18:00',
-    businessDays: '1,2,3,4,5'
+    businessDays: '1,2,3,4,5',
+    lunchBreakEnabled: true,
+    lunchStart: '12:00',
+    lunchEnd: '13:00'
   },
   cloudConfig: {
     provider: 'sqlite', // 'sqlite' | 'supabase' | 'rest_postgres'
@@ -108,7 +111,15 @@ class DatabaseService {
     ]);
     const usersPart = (st.users || []).map((u) => [u.id, u.name, u.isBlocked, u.accessRole, u.clientId]);
     const clientsPart = (st.clients || []).map((c) => [c.id, c.name, c.monthlyHoursQuota, c.status]);
-    return JSON.stringify({ ticketsPart, equipmentPart, solutionsPart, usersPart, clientsPart });
+    const contractPart = [
+      st.contract?.businessHoursStart || '',
+      st.contract?.businessHoursEnd || '',
+      st.contract?.businessDays || '',
+      st.contract?.lunchBreakEnabled !== false ? 1 : 0,
+      st.contract?.lunchStart || '',
+      st.contract?.lunchEnd || ''
+    ];
+    return JSON.stringify({ ticketsPart, equipmentPart, solutionsPart, usersPart, clientsPart, contractPart });
   }
 
   diffTicketChanges(oldTickets, newTickets) {
@@ -726,12 +737,15 @@ class DatabaseService {
     this.saveLocalCache();
   }
 
-  // --- AUXILIAR: CÁLCULO DE VENCIMENTO EM HORÁRIO COMERCIAL / EXPEDIENTE ÚTIL ---
+  // --- AUXILIAR: CÁLCULO DE VENCIMENTO EM HORÁRIO COMERCIAL / EXPEDIENTE ÚTIL (COM PAUSA DE ALMOÇO) ---
   calculateBusinessDue(startDate, slaHours, config = null) {
     const contract = config || this.state.contract || {};
     const startStr = contract.businessHoursStart || '08:00';
     const endStr = contract.businessHoursEnd || '18:00';
     const daysStr = contract.businessDays || '1,2,3,4,5';
+    const lunchEnabled = contract.lunchBreakEnabled !== false && contract.lunchBreakEnabled !== 0 && contract.lunchBreakEnabled !== '0';
+    const lunchStartStr = contract.lunchStart || '12:00';
+    const lunchEndStr = contract.lunchEnd || '13:00';
 
     let sh = 8, sm = 0, eh = 18, em = 0;
     try {
@@ -740,6 +754,29 @@ class DatabaseService {
       if (!isNaN(pSh)) { sh = pSh; sm = pSm || 0; }
       if (!isNaN(pEh)) { eh = pEh; em = pEm || 0; }
     } catch (_) {}
+
+    let lsh = 12, lsm = 0, leh = 13, lem = 0, hasLunch = Boolean(lunchEnabled);
+    if (hasLunch) {
+      try {
+        const [pLsh, pLsm] = lunchStartStr.split(':').map(Number);
+        const [pLeh, pLem] = lunchEndStr.split(':').map(Number);
+        if (!isNaN(pLsh) && !isNaN(pLeh)) {
+          lsh = pLsh; lsm = pLsm || 0;
+          leh = pLeh; lem = pLem || 0;
+          const openM = sh * 60 + sm;
+          const closeM = eh * 60 + em;
+          const lOpenM = lsh * 60 + lsm;
+          const lCloseM = leh * 60 + lem;
+          if (!(openM < lOpenM && lOpenM < lCloseM && lCloseM < closeM)) {
+            hasLunch = false;
+          }
+        } else {
+          hasLunch = false;
+        }
+      } catch (_) {
+        hasLunch = false;
+      }
+    }
 
     const allowedDays = daysStr.split(',').map((x) => Number(x.trim())).filter((x) => !isNaN(x) && x >= 1 && x <= 7);
     const validDays = allowedDays.length > 0 ? allowedDays : [1, 2, 3, 4, 5];
@@ -750,27 +787,64 @@ class DatabaseService {
     let step = 0;
 
     while (remainingMinutes > 0 && step < maxSteps) {
-      // 1=Segunda, ..., 7=Domingo
       const jsDay = curr.getDay(); // 0=Dom, 1=Seg, ..., 6=Sab
       const isoDay = jsDay === 0 ? 7 : jsDay;
       const currMin = curr.getHours() * 60 + curr.getMinutes();
       const openMin = sh * 60 + sm;
       const closeMin = eh * 60 + em;
 
-      if (validDays.includes(isoDay) && currMin >= openMin && currMin < closeMin) {
+      if (!validDays.includes(isoDay) || currMin >= closeMin) {
+        curr.setDate(curr.getDate() + 1);
+        curr.setHours(sh, sm, 0, 0);
+        step += 1;
+        continue;
+      }
+
+      if (currMin < openMin) {
+        curr.setHours(sh, sm, 0, 0);
+        step += 1;
+        continue;
+      }
+
+      if (hasLunch) {
+        const lStart = lsh * 60 + lsm;
+        const lEnd = leh * 60 + lem;
+
+        // Se está dentro do almoço: avança para o término do almoço
+        if (currMin >= lStart && currMin < lEnd) {
+          curr.setHours(leh, lem, 0, 0);
+          step += 1;
+          continue;
+        }
+
+        // Período 1: Manhã (antes do almoço)
+        if (currMin < lStart) {
+          const avail = lStart - currMin;
+          const take = Math.min(remainingMinutes, avail);
+          curr = new Date(curr.getTime() + take * 60000);
+          remainingMinutes -= take;
+          step += take;
+          if (curr.getHours() * 60 + curr.getMinutes() === lStart && remainingMinutes > 0) {
+            curr.setHours(leh, lem, 0, 0);
+          }
+          continue;
+        }
+
+        // Período 2: Tarde (após o almoço)
+        if (currMin >= lEnd && currMin < closeMin) {
+          const avail = closeMin - currMin;
+          const take = Math.min(remainingMinutes, avail);
+          curr = new Date(curr.getTime() + take * 60000);
+          remainingMinutes -= take;
+          step += take;
+          continue;
+        }
+      } else {
         const availToday = closeMin - currMin;
         const take = Math.min(remainingMinutes, availToday);
         curr = new Date(curr.getTime() + take * 60000);
         remainingMinutes -= take;
         step += take;
-      } else {
-        if (validDays.includes(isoDay) && currMin < openMin) {
-          curr.setHours(sh, sm, 0, 0);
-        } else {
-          curr.setDate(curr.getDate() + 1);
-          curr.setHours(sh, sm, 0, 0);
-        }
-        step += 1;
       }
     }
     return curr;

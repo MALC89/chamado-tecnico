@@ -1,10 +1,10 @@
 # 🛠️ ServiceDesk Pro — Sistema de Chamados Técnicos, SLA & Banco de Soluções
 
-![Versão](https://img.shields.io/badge/versão-v1.8.1-4f46e5)
+![Versão](https://img.shields.io/badge/versão-v1.9.0-4f46e5)
 ![Backend](https://img.shields.io/badge/Python_3-SQLite_WAL-10b981)
 ![Licença](https://img.shields.io/badge/uso-Corporativo_/_Contratos_Fixos-f59e0b)
 
-Sistema web completo de **Gestão de Chamados Técnicos (Help Desk / Service Desk)**, **Inventário de Equipamentos & Ativos de TI com Deduplicação**, **Controle de SLA em Horário de Expediente (1ª Resposta vs Resolução)**, **Correlação Automática de Soluções**, **Gestão de Múltiplos Clientes de Contrato Fixo**, **Aceite e Histórico de Início de Atendimento** e **Banco de Soluções com Documentação em PDF**.
+Sistema web completo de **Gestão de Chamados Técnicos (Help Desk / Service Desk)**, **Inventário de Equipamentos & Ativos de TI com Deduplicação**, **Controle de SLA em Horário de Expediente & Pausa de Almoço**, **Correlação Automática de Soluções**, **Gestão de Múltiplos Clientes de Contrato Fixo**, **Aceite e Histórico de Início de Atendimento** e **Banco de Soluções com Documentação em PDF**.
 
 ---
 
@@ -24,9 +24,12 @@ Sistema web completo de **Gestão de Chamados Técnicos (Help Desk / Service Des
   - Histórico de manutenções já executadas na mesma máquina/equipamento.
   - Botão de aplicação em 1 clique para preencher o laudo técnico com base no histórico comprovado.
 
-### 3. Horário de Atendimento / Expediente Comercial & SLA Diferenciado
+### 3. Horário de Atendimento, Expediente Comercial & Pausa no Intervalo de Almoço
 - **Configuração de Expediente**: Definição flexível do horário comercial (ex: 08:00 às 18:00) e dias úteis de atendimento (Segunda a Sexta-feira).
-- **SLA Não Corre Fora do Expediente**: O relógio de SLA pausa automaticamente fora do horário comercial (noites, madrugadas e finais de semana), garantindo que os prazos reflitam estritamente a janela contratual acordada com o cliente.
+- **Pausa Automática no Horário de Almoço**: Opção de definir o intervalo de almoço da equipe técnica (ex: 12:00 às 13:00). Durante esse período, o cronômetro do SLA fica **congelado**, não consumindo o tempo acordado em contrato.
+  - Exemplo prático: chamado aberto às 11:45 com SLA de 1h vence às 13:45 (15 min antes das 12h + pausa das 12h às 13h + 45 min após o almoço).
+  - Chamados abertos durante o almoço (ex: 12:30) iniciam a contagem apenas no retorno (às 13:00).
+- **SLA Não Corre Fora do Expediente**: O relógio de SLA pausa automaticamente fora do horário comercial (noites, madrugadas e finais de semana).
 - **SLA Duplo (1ª Resposta vs Resolução Final)**:
   - **SLA de Primeira Resposta**: Prazo útil até o técnico aceitar/iniciar o chamado ou registrar a primeira nota técnica de posicionamento ao solicitante.
   - **SLA de Resolução**: Prazo útil total para encerramento do chamado com o laudo do serviço realizado.
@@ -120,6 +123,7 @@ cd /opt/chamado-tecnico && git pull origin main && sudo bash configurar-dominio.
 
 | Versão | Data | Descrição das Entregas |
 | :--- | :--- | :--- |
+| **`v1.9.0`** | Nov/2026 | **Pausa de Almoço no SLA & Jornada Líquida Diária**: Configuração de intervalo de almoço técnico (ex: 12:00 às 13:00) com congelamento do cronômetro de SLA durante o almoço; novo controle toggle na aba Configurações & Contrato; badges informativos em tempo real no topo e nos chamados; cálculo automático de jornada útil líquida diária; prevenção contra estouro de chamados abertos antes ou durante o almoço. |
 | **`v1.8.1`** | Nov/2026 | **Correção de Carregamento do Inventário, Painel Interativo de Expediente & SLA Noturno**: Correção crítica de sintaxe que impedia abertura do modal de equipamentos e navegação; painel interativo de horários com 4 presets (Comercial, Flex, Estendido, Plantão 24/7); seletores toggle de dias da semana (Seg a Dom); simulador interativo de abertura fora do expediente garantindo que chamados abertos à noite não estourem o SLA; indicador em tempo real de status do suporte no topo; atalho para o inventário dentro do novo chamado. |
 | **`v1.8.0`** | Nov/2026 | **Inventário de Equipamentos, Correlação Automática de Soluções, Expediente Comercial & SLA Duplo**: Gestão de ativos com deduplicação por número de série/Service Tag; associação de equipamentos no chamado; correlação automática de soluções e manutenções anteriores no atendimento; configuração de horário de expediente com pausa do SLA fora do horário comercial e finais de semana; SLA de 1ª Resposta vs Resolução. |
 | **`v1.7.0`** | Out/2026 | **Aceite do Técnico, Início de Atendimento & Segurança de Login**: Chamados direcionados mantêm status `Aberto` até aceite do técnico; novo botão e painel `Iniciar Atendimento`; registro dos timestamps `assignedAt` e `startedAt` com linha do tempo de 4 etapas; remoção do reset público de senhas na tela de login (apenas Administrador no painel). |

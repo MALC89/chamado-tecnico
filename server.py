@@ -64,7 +64,10 @@ def init_db():
         ("theme_color", "'indigo'"),
         ("business_hours_start", "'08:00'"),
         ("business_hours_end", "'18:00'"),
-        ("business_days", "'1,2,3,4,5'")
+        ("business_days", "'1,2,3,4,5'"),
+        ("lunch_break_enabled", "1"),
+        ("lunch_start", "'12:00'"),
+        ("lunch_end", "'13:00'")
     ]:
         if col_name not in existing_cols:
             cur.execute(f"ALTER TABLE contract ADD COLUMN {col_name} TEXT DEFAULT {default_val};")
@@ -77,11 +80,13 @@ def init_db():
                 id, client_name, cnpj, contract_number, plan_type,
                 monthly_hours_quota, sla_target_percent, manager_name, status,
                 admin_user, admin_password, company_name, company_logo, login_subtitle, support_contact,
-                admin_avatar, theme_color, business_hours_start, business_hours_end, business_days
+                admin_avatar, theme_color, business_hours_start, business_hours_end, business_days,
+                lunch_break_enabled, lunch_start, lunch_end
             ) VALUES (
                 1, '', '', '', 'Contrato Fixo Mensal', 0, 95, '', 'Ativo',
                 'admin', 'admin123', 'ServiceDesk Pro', '', 'Portal de Chamados Técnicos & Controle de SLA', '',
-                '', 'indigo', '08:00', '18:00', '1,2,3,4,5'
+                '', 'indigo', '08:00', '18:00', '1,2,3,4,5',
+                1, '12:00', '13:00'
             );
         """)
 
@@ -238,8 +243,12 @@ def init_db():
     conn.close()
 
 
-def calculate_business_due(start_dt, sla_hours, start_time_str="08:00", end_time_str="18:00", business_days_str="1,2,3,4,5"):
-    """Calcula o prazo limite somando apenas os minutos dentro do horário de expediente comercial configurado."""
+def calculate_business_due(
+    start_dt, sla_hours,
+    start_time_str="08:00", end_time_str="18:00", business_days_str="1,2,3,4,5",
+    lunch_enabled=True, lunch_start_str="12:00", lunch_end_str="13:00"
+):
+    """Calcula o prazo limite somando apenas os minutos dentro do expediente útil e pulando a pausa de almoço."""
     try:
         sh, sm = map(int, (start_time_str or "08:00").split(":"))
         eh, em = map(int, (end_time_str or "18:00").split(":"))
@@ -248,6 +257,20 @@ def calculate_business_due(start_dt, sla_hours, start_time_str="08:00", end_time
             allowed_days = [1, 2, 3, 4, 5]
     except Exception:
         sh, sm, eh, em, allowed_days = 8, 0, 18, 0, [1, 2, 3, 4, 5]
+
+    has_lunch = bool(lunch_enabled)
+    if has_lunch:
+        try:
+            lsh, lsm = map(int, (lunch_start_str or "12:00").split(":"))
+            leh, lem = map(int, (lunch_end_str or "13:00").split(":"))
+            open_m = sh * 60 + sm
+            close_m = eh * 60 + em
+            l_open_m = lsh * 60 + lsm
+            l_close_m = leh * 60 + lem
+            if not (open_m < l_open_m < l_close_m < close_m):
+                has_lunch = False
+        except Exception:
+            has_lunch = False
 
     curr = start_dt
     if curr.tzinfo is None:
@@ -263,18 +286,51 @@ def calculate_business_due(start_dt, sla_hours, start_time_str="08:00", end_time
         open_min = sh * 60 + sm
         close_min = eh * 60 + em
 
-        if iso_day in allowed_days and open_min <= curr_min < close_min:
-            avail_today = close_min - curr_min
-            take = min(remaining_minutes, avail_today)
+        if iso_day not in allowed_days or curr_min >= close_min:
+            curr = (curr + timedelta(days=1)).replace(hour=sh, minute=sm, second=0, microsecond=0)
+            step += 1
+            continue
+
+        if curr_min < open_min:
+            curr = curr.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            step += 1
+            continue
+
+        if has_lunch:
+            l_start = lsh * 60 + lsm
+            l_end = leh * 60 + lem
+
+            # Se está dentro do almoço: avança para o término do almoço
+            if l_start <= curr_min < l_end:
+                curr = curr.replace(hour=leh, minute=lem, second=0, microsecond=0)
+                step += 1
+                continue
+
+            # Período 1: Manhã (antes do almoço)
+            if curr_min < l_start:
+                avail = l_start - curr_min
+                take = min(remaining_minutes, avail)
+                curr += timedelta(minutes=take)
+                remaining_minutes -= take
+                step += take
+                if curr.hour * 60 + curr.minute == l_start and remaining_minutes > 0:
+                    curr = curr.replace(hour=leh, minute=lem, second=0, microsecond=0)
+                continue
+
+            # Período 2: Tarde (após o almoço)
+            if curr_min >= l_end and curr_min < close_min:
+                avail = close_min - curr_min
+                take = min(remaining_minutes, avail)
+                curr += timedelta(minutes=take)
+                remaining_minutes -= take
+                step += take
+                continue
+        else:
+            avail = close_min - curr_min
+            take = min(remaining_minutes, avail)
             curr += timedelta(minutes=take)
             remaining_minutes -= take
             step += take
-        else:
-            if iso_day in allowed_days and curr_min < open_min:
-                curr = curr.replace(hour=sh, minute=sm, second=0, microsecond=0)
-            else:
-                curr = (curr + timedelta(days=1)).replace(hour=sh, minute=sm, second=0, microsecond=0)
-            step += 1
 
     return curr
 
@@ -304,7 +360,10 @@ def fetch_full_state():
         "themeColor": (c_row["theme_color"] if "theme_color" in c_row.keys() else "indigo") or "indigo",
         "businessHoursStart": (c_row["business_hours_start"] if "business_hours_start" in c_row.keys() else "08:00") or "08:00",
         "businessHoursEnd": (c_row["business_hours_end"] if "business_hours_end" in c_row.keys() else "18:00") or "18:00",
-        "businessDays": (c_row["business_days"] if "business_days" in c_row.keys() else "1,2,3,4,5") or "1,2,3,4,5"
+        "businessDays": (c_row["business_days"] if "business_days" in c_row.keys() else "1,2,3,4,5") or "1,2,3,4,5",
+        "lunchBreakEnabled": bool(c_row["lunch_break_enabled"]) if ("lunch_break_enabled" in c_row.keys() and c_row["lunch_break_enabled"] is not None) else True,
+        "lunchStart": (c_row["lunch_start"] if "lunch_start" in c_row.keys() else "12:00") or "12:00",
+        "lunchEnd": (c_row["lunch_end"] if "lunch_end" in c_row.keys() else "13:00") or "13:00"
     }
 
     cur.execute("SELECT * FROM clients ORDER BY created_at DESC;")
@@ -564,7 +623,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                         theme_color = ?,
                         business_hours_start = ?,
                         business_hours_end = ?,
-                        business_days = ?
+                        business_days = ?,
+                        lunch_break_enabled = ?,
+                        lunch_start = ?,
+                        lunch_end = ?
                     WHERE id = 1;
                 """, (
                     body.get("clientName", curr["client_name"]),
@@ -581,7 +643,10 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     body.get("themeColor", curr["theme_color"] or "indigo"),
                     (body.get("businessHoursStart") if "businessHoursStart" in body else (curr["business_hours_start"] if "business_hours_start" in curr.keys() else "08:00")) or "08:00",
                     (body.get("businessHoursEnd") if "businessHoursEnd" in body else (curr["business_hours_end"] if "business_hours_end" in curr.keys() else "18:00")) or "18:00",
-                    (body.get("businessDays") if "businessDays" in body else (curr["business_days"] if "business_days" in curr.keys() else "1,2,3,4,5")) or "1,2,3,4,5"
+                    (body.get("businessDays") if "businessDays" in body else (curr["business_days"] if "business_days" in curr.keys() else "1,2,3,4,5")) or "1,2,3,4,5",
+                    1 if (body.get("lunchBreakEnabled", True) in (True, 1, "1", "true")) else 0,
+                    (body.get("lunchStart") if "lunchStart" in body else (curr["lunch_start"] if "lunch_start" in curr.keys() else "12:00")) or "12:00",
+                    (body.get("lunchEnd") if "lunchEnd" in body else (curr["lunch_end"] if "lunch_end" in curr.keys() else "13:00")) or "13:00"
                 ))
                 if body.get("adminPassword"):
                     cur.execute("UPDATE contract SET admin_password = ? WHERE id = 1;", (body["adminPassword"],))
@@ -904,11 +969,14 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 now = datetime.now(timezone.utc)
 
                 # Busca expediente configurado no contrato
-                cur.execute("SELECT business_hours_start, business_hours_end, business_days FROM contract WHERE id = 1;")
+                cur.execute("SELECT business_hours_start, business_hours_end, business_days, lunch_break_enabled, lunch_start, lunch_end FROM contract WHERE id = 1;")
                 cfg_row = cur.fetchone()
                 bh_start = (cfg_row["business_hours_start"] if cfg_row and "business_hours_start" in cfg_row.keys() else "08:00") or "08:00"
                 bh_end = (cfg_row["business_hours_end"] if cfg_row and "business_hours_end" in cfg_row.keys() else "18:00") or "18:00"
                 bh_days = (cfg_row["business_days"] if cfg_row and "business_days" in cfg_row.keys() else "1,2,3,4,5") or "1,2,3,4,5"
+                bh_lunch_enabled = bool(cfg_row["lunch_break_enabled"]) if cfg_row and "lunch_break_enabled" in cfg_row.keys() and cfg_row["lunch_break_enabled"] is not None else True
+                bh_lunch_start = (cfg_row["lunch_start"] if cfg_row and "lunch_start" in cfg_row.keys() else "12:00") or "12:00"
+                bh_lunch_end = (cfg_row["lunch_end"] if cfg_row and "lunch_end" in cfg_row.keys() else "13:00") or "13:00"
 
                 # Se clientId não veio no body, herda do usuário solicitante
                 client_id = (body.get("clientId") or "").strip()
@@ -957,11 +1025,11 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 first_resp_due_str = body.get("firstResponseDueAt")
 
                 if not due_dt_str:
-                    due_dt = calculate_business_due(now, sla_hours, bh_start, bh_end, bh_days)
+                    due_dt = calculate_business_due(now, sla_hours, bh_start, bh_end, bh_days, bh_lunch_enabled, bh_lunch_start, bh_lunch_end)
                     due_dt_str = due_dt.isoformat()
 
                 if not first_resp_due_str:
-                    first_resp_due_dt = calculate_business_due(now, first_resp_sla, bh_start, bh_end, bh_days)
+                    first_resp_due_dt = calculate_business_due(now, first_resp_sla, bh_start, bh_end, bh_days, bh_lunch_enabled, bh_lunch_start, bh_lunch_end)
                     first_resp_due_str = first_resp_due_dt.isoformat()
 
                 tech_val = (body.get("technician") or "Aguardando Direcionamento (Admin)").strip()
@@ -1018,18 +1086,21 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                 new_sla_hours = float(body.get("slaHours") if "slaHours" in body and body["slaHours"] is not None else row["sla_hours"])
 
                 # Busca configurações de expediente para recalcular vencimento em horas úteis
-                cur.execute("SELECT business_hours_start, business_hours_end, business_days FROM contract WHERE id = 1;")
+                cur.execute("SELECT business_hours_start, business_hours_end, business_days, lunch_break_enabled, lunch_start, lunch_end FROM contract WHERE id = 1;")
                 cfg_row = cur.fetchone()
                 bh_start = (cfg_row["business_hours_start"] if cfg_row and "business_hours_start" in cfg_row.keys() else "08:00") or "08:00"
                 bh_end = (cfg_row["business_hours_end"] if cfg_row and "business_hours_end" in cfg_row.keys() else "18:00") or "18:00"
                 bh_days = (cfg_row["business_days"] if cfg_row and "business_days" in cfg_row.keys() else "1,2,3,4,5") or "1,2,3,4,5"
+                bh_lunch_enabled = bool(cfg_row["lunch_break_enabled"]) if cfg_row and "lunch_break_enabled" in cfg_row.keys() and cfg_row["lunch_break_enabled"] is not None else True
+                bh_lunch_start = (cfg_row["lunch_start"] if cfg_row and "lunch_start" in cfg_row.keys() else "12:00") or "12:00"
+                bh_lunch_end = (cfg_row["lunch_end"] if cfg_row and "lunch_end" in cfg_row.keys() else "13:00") or "13:00"
 
                 # Recalcula o vencimento (due_at) caso o SLA em horas tenha sido editado pelo Admin
                 due_at = row["due_at"]
                 if abs(new_sla_hours - float(row["sla_hours"])) > 0.001:
                     try:
                         created_dt = datetime.fromisoformat(row["created_at"])
-                        due_at = calculate_business_due(created_dt, new_sla_hours, bh_start, bh_end, bh_days).isoformat()
+                        due_at = calculate_business_due(created_dt, new_sla_hours, bh_start, bh_end, bh_days, bh_lunch_enabled, bh_lunch_start, bh_lunch_end).isoformat()
                     except Exception:
                         pass
 
