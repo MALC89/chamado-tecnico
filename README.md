@@ -1,6 +1,6 @@
 # 🛠️ ServiceDesk Pro — Sistema de Chamados Técnicos, SLA & Banco de Soluções
 
-![Versão](https://img.shields.io/badge/versão-v1.9.0-4f46e5)
+![Versão](https://img.shields.io/badge/versão-v2.0.0-4f46e5)
 ![Backend](https://img.shields.io/badge/Python_3-SQLite_WAL-10b981)
 ![Licença](https://img.shields.io/badge/uso-Corporativo_/_Contratos_Fixos-f59e0b)
 
@@ -60,6 +60,7 @@ Sistema web completo de **Gestão de Chamados Técnicos (Help Desk / Service Des
 - **Tela de Login Segura**: Remoção do reset público de senhas na tela de login; o desbloqueio/redefinição de senha é exclusivo do perfil Administrador dentro do painel seguro.
 - **Troca de Senha Obrigatória no 1º Acesso**: Todo novo usuário (ou usuário cuja senha foi redefinida/desbloqueada pelo Administrador) é direcionado automaticamente para cadastrar uma senha pessoal no primeiro login.
 - **Identidade Visual Customizável**: Upload da logo da sua empresa de TI/Suporte exibida na tela de login e no menu lateral.
+- **Modo Escuro (Dark Mode) & Modo Claro**: Alternância rápida entre Modo Escuro e Modo Claro no cabeçalho superior, na tela de login e na aba *Configurações & Perfil*, com persistência automática no navegador e combinação livre com qualquer uma das 7 cores de destaque.
 - **Perfil do Usuário**: Todos os perfis podem alterar sua foto de perfil, trocar a senha e escolher entre **7 temas de cores** (*Índigo, Azul Oceano, Esmeralda, Roxo Real, Rubi, Laranja Âmbar e Grafite*).
 
 ### 7. Finalização Técnica & Banco de Soluções com PDF
@@ -123,6 +124,7 @@ cd /opt/chamado-tecnico && git pull origin main && sudo bash configurar-dominio.
 
 | Versão | Data | Descrição das Entregas |
 | :--- | :--- | :--- |
+| **`v2.0.0`** | Nov/2026 | **Modo Escuro Completo (Dark Mode)**: Alternância em 1 clique entre Modo Escuro (`🌙`) e Modo Claro (`☀️`) na barra superior, na tela de login e na aba *Configurações & Perfil*; paleta escura de alto contraste para tabelas, modais, formulários, cards e badges; persistência automática da preferência do usuário e compatibilidade total com os 7 temas de cores. |
 | **`v1.9.0`** | Nov/2026 | **Pausa de Almoço no SLA & Jornada Líquida Diária**: Configuração de intervalo de almoço técnico (ex: 12:00 às 13:00) com congelamento do cronômetro de SLA durante o almoço; novo controle toggle na aba Configurações & Contrato; badges informativos em tempo real no topo e nos chamados; cálculo automático de jornada útil líquida diária; prevenção contra estouro de chamados abertos antes ou durante o almoço. |
 | **`v1.8.1`** | Nov/2026 | **Correção de Carregamento do Inventário, Painel Interativo de Expediente & SLA Noturno**: Correção crítica de sintaxe que impedia abertura do modal de equipamentos e navegação; painel interativo de horários com 4 presets (Comercial, Flex, Estendido, Plantão 24/7); seletores toggle de dias da semana (Seg a Dom); simulador interativo de abertura fora do expediente garantindo que chamados abertos à noite não estourem o SLA; indicador em tempo real de status do suporte no topo; atalho para o inventário dentro do novo chamado. |
 | **`v1.8.0`** | Nov/2026 | **Inventário de Equipamentos, Correlação Automática de Soluções, Expediente Comercial & SLA Duplo**: Gestão de ativos com deduplicação por número de série/Service Tag; associação de equipamentos no chamado; correlação automática de soluções e manutenções anteriores no atendimento; configuração de horário de expediente com pausa do SLA fora do horário comercial e finais de semana; SLA de 1ª Resposta vs Resolução. |

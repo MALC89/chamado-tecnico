@@ -23,6 +23,18 @@
     <!-- Efeito visual de fundo sutil -->
     <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-950/60 via-slate-950 to-slate-950 pointer-events-none"></div>
 
+    <!-- Botão rápido de Modo Escuro / Claro na Tela de Login -->
+    <button
+      type="button"
+      id="btn-login-dark-mode"
+      onclick="toggleDarkMode()"
+      title="Alternar entre Modo Escuro e Modo Claro"
+      class="absolute top-4 right-4 z-10 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 text-xs font-semibold shadow-lg transition-all cursor-pointer"
+    >
+      <i data-lucide="moon" class="w-4 h-4 text-indigo-400"></i>
+      <span id="login-dark-mode-label">Modo Escuro</span>
+    </button>
+
     <div class="relative max-w-md w-full bg-white rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden">
       <!-- Cabeçalho com a Logo da Sua Empresa -->
       <div class="px-8 pt-8 pb-6 bg-slate-900 text-white text-center border-b border-slate-800">
@@ -284,6 +296,11 @@
         <button onclick="switchTab('inventory')" title="Acessar Inventário de TI e Ativos" class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-all cursor-pointer">
           <i data-lucide="cpu" class="w-4 h-4 text-indigo-600"></i>
           <span class="hidden lg:inline">Inventário TI</span>
+        </button>
+
+        <button id="btn-header-dark-mode" onclick="toggleDarkMode()" title="Alternar entre Modo Escuro e Modo Claro" class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-all cursor-pointer">
+          <i data-lucide="moon" class="w-4 h-4 text-indigo-600"></i>
+          <span id="header-dark-mode-label" class="hidden md:inline">Modo Escuro</span>
         </button>
 
         <button onclick="switchTab('profile')" title="Mudar cor, senha e foto de perfil" class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-all cursor-pointer">
@@ -1199,22 +1216,78 @@
           </button>
         </div>
 
-        <!-- Seletor de Cores do Sistema (Mudar de Cor) -->
-        <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <div>
-              <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
-                <i data-lucide="palette" class="w-4 h-4 text-indigo-600"></i>
-                Personalizar Cor do Sistema (Tema Visual)
-              </h3>
-              <p class="text-xs text-slate-500">Todos os usuários têm permissão para escolher a cor do seu portal, alterar foto de perfil e trocar a própria senha.</p>
+        <!-- Seletor de Cores do Sistema e Modo Escuro / Claro -->
+        <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-6">
+          <!-- Bloco 1: Modo Claro vs Modo Escuro -->
+          <div class="pb-5 border-b border-slate-200">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div>
+                <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+                  <i data-lucide="moon" class="w-4 h-4 text-indigo-600"></i>
+                  <span>Aparência da Tela (Modo Claro / Modo Escuro)</span>
+                </h3>
+                <p class="text-xs text-slate-500">Escolha entre o tema claro tradicional ou o modo escuro para maior conforto visual em ambientes noturnos ou de plantão.</p>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200" id="current-dark-mode-badge">
+                Modo Ativo: Claro
+              </span>
             </div>
-            <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200" id="current-theme-badge">
-              Tema Ativo: Índigo
-            </span>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                id="btn-mode-light"
+                onclick="setDarkMode(false)"
+                class="p-3.5 rounded-xl border-2 border-indigo-600 bg-indigo-50/40 flex items-center justify-between gap-3 transition-all cursor-pointer text-left"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                    <i data-lucide="sun" class="w-5 h-5"></i>
+                  </div>
+                  <div>
+                    <p class="text-xs font-bold text-slate-900">Modo Claro (Light Mode)</p>
+                    <p class="text-[11px] text-slate-500">Visual clássico de alto brilho para ambientes iluminados</p>
+                  </div>
+                </div>
+                <span id="badge-mode-light" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white">Ativo</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-mode-dark"
+                onclick="setDarkMode(true)"
+                class="p-3.5 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex items-center justify-between gap-3 transition-all cursor-pointer text-left"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-xl bg-slate-800 text-indigo-400 flex items-center justify-center shrink-0 border border-slate-700">
+                    <i data-lucide="moon" class="w-5 h-5"></i>
+                  </div>
+                  <div>
+                    <p class="text-xs font-bold text-slate-900">Modo Escuro (Dark Mode)</p>
+                    <p class="text-[11px] text-slate-500">Fundo escuro confortável para reduzir o cansaço visual</p>
+                  </div>
+                </div>
+                <span id="badge-mode-dark" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Desativado</span>
+              </button>
+            </div>
           </div>
 
-          <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3" id="theme-color-grid">
+          <!-- Bloco 2: Seletor de Cores de Destaque -->
+          <div>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div>
+                <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+                  <i data-lucide="palette" class="w-4 h-4 text-indigo-600"></i>
+                  Personalizar Cor do Sistema (Tema Visual)
+                </h3>
+                <p class="text-xs text-slate-500">Todos os usuários têm permissão para escolher a cor do seu portal, alterar foto de perfil e trocar a própria senha.</p>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200" id="current-theme-badge">
+                Tema Ativo: Índigo
+              </span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3" id="theme-color-grid">
             <button type="button" onclick="handleSelectThemeColor('indigo')" data-color-btn="indigo" class="theme-color-btn p-3 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex flex-col items-center gap-2 transition-all cursor-pointer">
               <span class="w-8 h-8 rounded-full bg-[#4f46e5] shadow-md"></span>
               <span class="text-xs font-semibold text-slate-700">Índigo Padrão</span>
@@ -1249,6 +1322,7 @@
               <span class="w-8 h-8 rounded-full bg-[#334155] shadow-md"></span>
               <span class="text-xs font-semibold text-slate-700">Grafite Escuro</span>
             </button>
+            </div>
           </div>
         </div>
 

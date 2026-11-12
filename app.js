@@ -4,8 +4,10 @@
 
 let currentTab = 'tickets';
 let activeTicketId = null;
+const DARK_MODE_STORAGE_KEY = 'servicedesk_dark_mode';
 
 document.addEventListener('DOMContentLoaded', async () => {
+  applyDarkMode(isDarkModeEnabled());
   await window.db.initFromServer();
   window.db.onRealtimeUpdateCallback = handleRealtimeServerUpdate;
   checkAuthAndRender();
@@ -309,6 +311,103 @@ function applyThemeColor(colorName) {
       btn.classList.add('border-slate-200');
     }
   });
+}
+
+function isDarkModeEnabled() {
+  try {
+    return localStorage.getItem(DARK_MODE_STORAGE_KEY) === 'true';
+  } catch (e) {
+    return false;
+  }
+}
+
+function applyDarkMode(isDark) {
+  const darkActive = Boolean(isDark);
+  if (darkActive) {
+    document.documentElement.classList.add('dark');
+    if (document.body) document.body.classList.add('dark-mode');
+  } else {
+    document.documentElement.classList.remove('dark');
+    if (document.body) document.body.classList.remove('dark-mode');
+  }
+
+  // Atualiza botão da Topbar
+  const headerBtn = document.getElementById('btn-header-dark-mode');
+  if (headerBtn) {
+    headerBtn.innerHTML = darkActive
+      ? `<i data-lucide="sun" class="w-4 h-4 text-amber-400"></i><span id="header-dark-mode-label" class="hidden md:inline">Modo Claro</span>`
+      : `<i data-lucide="moon" class="w-4 h-4 text-indigo-600"></i><span id="header-dark-mode-label" class="hidden md:inline">Modo Escuro</span>`;
+  }
+
+  // Atualiza botão flutuante da Tela de Login
+  const loginBtn = document.getElementById('btn-login-dark-mode');
+  if (loginBtn) {
+    loginBtn.innerHTML = darkActive
+      ? `<i data-lucide="sun" class="w-4 h-4 text-amber-400"></i><span id="login-dark-mode-label">Modo Claro</span>`
+      : `<i data-lucide="moon" class="w-4 h-4 text-indigo-400"></i><span id="login-dark-mode-label">Modo Escuro</span>`;
+  }
+
+  // Atualiza seletores e badges da aba Configurações & Perfil
+  const modeBadge = document.getElementById('current-dark-mode-badge');
+  if (modeBadge) {
+    modeBadge.textContent = darkActive ? 'Modo Ativo: Escuro (Dark)' : 'Modo Ativo: Claro';
+  }
+
+  const btnLight = document.getElementById('btn-mode-light');
+  const btnDark = document.getElementById('btn-mode-dark');
+  const badgeLight = document.getElementById('badge-mode-light');
+  const badgeDark = document.getElementById('badge-mode-dark');
+
+  if (btnLight && btnDark) {
+    if (darkActive) {
+      btnDark.className =
+        'p-3.5 rounded-xl border-2 border-indigo-600 bg-indigo-50/40 flex items-center justify-between gap-3 transition-all cursor-pointer text-left ring-2 ring-indigo-500/20';
+      btnLight.className =
+        'p-3.5 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex items-center justify-between gap-3 transition-all cursor-pointer text-left';
+      if (badgeDark) {
+        badgeDark.textContent = 'Ativo';
+        badgeDark.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white';
+      }
+      if (badgeLight) {
+        badgeLight.textContent = 'Desativado';
+        badgeLight.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500';
+      }
+    } else {
+      btnLight.className =
+        'p-3.5 rounded-xl border-2 border-indigo-600 bg-indigo-50/40 flex items-center justify-between gap-3 transition-all cursor-pointer text-left ring-2 ring-indigo-500/20';
+      btnDark.className =
+        'p-3.5 rounded-xl border-2 border-slate-200 hover:border-slate-400 flex items-center justify-between gap-3 transition-all cursor-pointer text-left';
+      if (badgeLight) {
+        badgeLight.textContent = 'Ativo';
+        badgeLight.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white';
+      }
+      if (badgeDark) {
+        badgeDark.textContent = 'Desativado';
+        badgeDark.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500';
+      }
+    }
+  }
+
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
+
+function setDarkMode(isDark, showFeedback = true) {
+  const darkActive = Boolean(isDark);
+  try {
+    localStorage.setItem(DARK_MODE_STORAGE_KEY, darkActive ? 'true' : 'false');
+  } catch (e) {
+    // Ignora caso localStorage esteja bloqueado
+  }
+  applyDarkMode(darkActive);
+  if (showFeedback) {
+    showToast(darkActive ? '🌙 Modo Escuro ativado!' : '☀️ Modo Claro ativado!', 'info');
+  }
+}
+
+function toggleDarkMode() {
+  setDarkMode(!isDarkModeEnabled(), true);
 }
 
 function getInitials(name) {
@@ -4321,6 +4420,7 @@ function loadProfileTab() {
   const activeColor = userObj?.themeColor || session.themeColor || contract.themeColor || 'indigo';
 
   applyThemeColor(activeColor);
+  applyDarkMode(isDarkModeEnabled());
 
   // Banner e badge de Troca Obrigatória no 1º Acesso
   const firstLoginBanner = document.getElementById('first-login-password-banner');
@@ -5024,6 +5124,8 @@ window.applyBusinessHoursPreset = applyBusinessHoursPreset;
 window.updateBusinessHoursCalculations = updateBusinessHoursCalculations;
 window.toggleNewTicketEquipMode = toggleNewTicketEquipMode;
 window.toggleLunchBreakFields = toggleLunchBreakFields;
+window.toggleDarkMode = toggleDarkMode;
+window.setDarkMode = setDarkMode;
 
 // ==========================================
 // UTILITÁRIOS

@@ -173,6 +173,280 @@ body {
   }
 }
 
+/* =========================================================
+   MODO ESCURO (DARK MODE) COMPLETO — ServiceDesk Pro
+   ========================================================= */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body,
+body.dark-mode {
+  background-color: #0b1120 !important;
+  color: #e2e8f0 !important;
+}
+
+/* Superfícies principais (Cards, Modais, Tabelas, Topbar) */
+html.dark .bg-white,
+body.dark-mode .bg-white {
+  background-color: #1e293b !important;
+  color: #e2e8f0;
+}
+
+html.dark .bg-slate-50,
+html.dark .bg-slate-50\/70,
+html.dark .bg-slate-50\/80,
+html.dark .bg-slate-50\/50,
+body.dark-mode .bg-slate-50,
+body.dark-mode .bg-slate-50\/70,
+body.dark-mode .bg-slate-50\/80,
+body.dark-mode .bg-slate-50\/50 {
+  background-color: #0f172a !important;
+}
+
+html.dark .bg-slate-100,
+html.dark .bg-slate-200,
+body.dark-mode .bg-slate-100,
+body.dark-mode .bg-slate-200 {
+  background-color: #334155 !important;
+}
+
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-100:hover,
+html.dark .hover\:bg-slate-200:hover,
+body.dark-mode .hover\:bg-slate-50:hover,
+body.dark-mode .hover\:bg-slate-100:hover,
+body.dark-mode .hover\:bg-slate-200:hover {
+  background-color: #334155 !important;
+}
+
+/* Tipografia no Modo Escuro */
+html.dark .text-slate-950,
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+body.dark-mode .text-slate-950,
+body.dark-mode .text-slate-900,
+body.dark-mode .text-slate-800 {
+  color: #f8fafc !important;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+body.dark-mode .text-slate-700,
+body.dark-mode .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-500,
+html.dark .text-slate-400,
+body.dark-mode .text-slate-500,
+body.dark-mode .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+/* Bordas e Divisórias */
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-200\/80,
+html.dark .border-slate-300,
+body.dark-mode .border-slate-100,
+body.dark-mode .border-slate-200,
+body.dark-mode .border-slate-200\/80,
+body.dark-mode .border-slate-300 {
+  border-color: #334155 !important;
+}
+
+html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+body.dark-mode .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+body.dark-mode .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #334155 !important;
+}
+
+/* Campos de Formulário (Inputs, Selects, Textareas) */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html.dark select,
+html.dark textarea,
+body.dark-mode input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body.dark-mode select,
+body.dark-mode textarea {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder,
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder {
+  color: #64748b !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus,
+body.dark-mode input:focus,
+body.dark-mode select:focus,
+body.dark-mode textarea:focus {
+  border-color: var(--theme-500) !important;
+}
+
+/* Fundos suaves e Badges coloridos adaptados para contraste no Modo Escuro */
+html.dark .bg-indigo-50,
+html.dark .bg-indigo-50\/50,
+html.dark .bg-indigo-50\/40,
+body.dark-mode .bg-indigo-50,
+body.dark-mode .bg-indigo-50\/50,
+body.dark-mode .bg-indigo-50\/40 {
+  background-color: rgba(99, 102, 241, 0.14) !important;
+}
+
+html.dark .bg-indigo-100,
+body.dark-mode .bg-indigo-100 {
+  background-color: rgba(99, 102, 241, 0.24) !important;
+}
+
+html.dark .text-indigo-950,
+html.dark .text-indigo-900,
+html.dark .text-indigo-800,
+html.dark .text-indigo-700,
+body.dark-mode .text-indigo-950,
+body.dark-mode .text-indigo-900,
+body.dark-mode .text-indigo-800,
+body.dark-mode .text-indigo-700 {
+  color: #a5b4fc !important;
+}
+
+html.dark .border-indigo-100,
+html.dark .border-indigo-200,
+html.dark .border-indigo-300,
+body.dark-mode .border-indigo-100,
+body.dark-mode .border-indigo-200,
+body.dark-mode .border-indigo-300 {
+  border-color: rgba(99, 102, 241, 0.35) !important;
+}
+
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-50\/60,
+html.dark .bg-emerald-100,
+body.dark-mode .bg-emerald-50,
+body.dark-mode .bg-emerald-50\/60,
+body.dark-mode .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+}
+
+html.dark .text-emerald-950,
+html.dark .text-emerald-900,
+html.dark .text-emerald-800,
+html.dark .text-emerald-700,
+body.dark-mode .text-emerald-950,
+body.dark-mode .text-emerald-900,
+body.dark-mode .text-emerald-800,
+body.dark-mode .text-emerald-700 {
+  color: #6ee7b7 !important;
+}
+
+html.dark .border-emerald-200,
+html.dark .border-emerald-300,
+body.dark-mode .border-emerald-200,
+body.dark-mode .border-emerald-300 {
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+
+html.dark .bg-amber-50,
+html.dark .bg-amber-50\/40,
+html.dark .bg-amber-100,
+body.dark-mode .bg-amber-50,
+body.dark-mode .bg-amber-50\/40,
+body.dark-mode .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+}
+
+html.dark .text-amber-950,
+html.dark .text-amber-900,
+html.dark .text-amber-800,
+html.dark .text-amber-700,
+body.dark-mode .text-amber-950,
+body.dark-mode .text-amber-900,
+body.dark-mode .text-amber-800,
+body.dark-mode .text-amber-700 {
+  color: #fcd34d !important;
+}
+
+html.dark .border-amber-200,
+html.dark .border-amber-300,
+body.dark-mode .border-amber-200,
+body.dark-mode .border-amber-300 {
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+
+html.dark .bg-rose-50,
+html.dark .bg-rose-100,
+body.dark-mode .bg-rose-50,
+body.dark-mode .bg-rose-100 {
+  background-color: rgba(244, 63, 94, 0.15) !important;
+}
+
+html.dark .text-rose-900,
+html.dark .text-rose-800,
+html.dark .text-rose-700,
+body.dark-mode .text-rose-900,
+body.dark-mode .text-rose-800,
+body.dark-mode .text-rose-700 {
+  color: #fda4af !important;
+}
+
+html.dark .border-rose-200,
+html.dark .border-rose-300,
+body.dark-mode .border-rose-200,
+body.dark-mode .border-rose-300 {
+  border-color: rgba(244, 63, 94, 0.35) !important;
+}
+
+html.dark .bg-sky-50,
+html.dark .bg-sky-100,
+body.dark-mode .bg-sky-50,
+body.dark-mode .bg-sky-100 {
+  background-color: rgba(14, 165, 233, 0.15) !important;
+}
+
+html.dark .text-sky-800,
+html.dark .text-sky-700,
+body.dark-mode .text-sky-800,
+body.dark-mode .text-sky-700 {
+  color: #7dd3fc !important;
+}
+
+html.dark .bg-purple-50,
+html.dark .bg-purple-100,
+body.dark-mode .bg-purple-50,
+body.dark-mode .bg-purple-100 {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+}
+
+html.dark .text-purple-800,
+html.dark .text-purple-700,
+body.dark-mode .text-purple-800,
+body.dark-mode .text-purple-700 {
+  color: #d8b4fe !important;
+}
+
+/* Barra de rolagem no Modo Escuro */
+html.dark ::-webkit-scrollbar-track,
+body.dark-mode ::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+html.dark ::-webkit-scrollbar-thumb,
+body.dark-mode ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover,
+body.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
 /* Estilo de impressão / Exportação PDF */
 @media print {
   body {
