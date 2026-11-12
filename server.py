@@ -6,8 +6,12 @@ Sistema de Chamados Técnicos & SLA para Contrato Fixo.
 
 import json
 import os
+import re
 import sqlite3
+import threading
 import time
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone, timedelta
 from http.server import SimpleHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -67,7 +71,15 @@ def init_db():
         ("business_days", "'1,2,3,4,5'"),
         ("lunch_break_enabled", "1"),
         ("lunch_start", "'12:00'"),
-        ("lunch_end", "'13:00'")
+        ("lunch_end", "'13:00'"),
+        ("admin_phone", "''"),
+        ("whatsapp_enabled", "0"),
+        ("whatsapp_api_url", "''"),
+        ("whatsapp_api_key", "''"),
+        ("whatsapp_instance", "''"),
+        ("whatsapp_notify_tech", "1"),
+        ("whatsapp_notify_user", "1"),
+        ("whatsapp_notify_admin", "1")
     ]:
         if col_name not in existing_cols:
             cur.execute(f"ALTER TABLE contract ADD COLUMN {col_name} TEXT DEFAULT {default_val};")
@@ -363,7 +375,15 @@ def fetch_full_state():
         "businessDays": (c_row["business_days"] if "business_days" in c_row.keys() else "1,2,3,4,5") or "1,2,3,4,5",
         "lunchBreakEnabled": bool(c_row["lunch_break_enabled"]) if ("lunch_break_enabled" in c_row.keys() and c_row["lunch_break_enabled"] is not None) else True,
         "lunchStart": (c_row["lunch_start"] if "lunch_start" in c_row.keys() else "12:00") or "12:00",
-        "lunchEnd": (c_row["lunch_end"] if "lunch_end" in c_row.keys() else "13:00") or "13:00"
+        "lunchEnd": (c_row["lunch_end"] if "lunch_end" in c_row.keys() else "13:00") or "13:00",
+        "adminPhone": (c_row["admin_phone"] if "admin_phone" in c_row.keys() else "") or "",
+        "whatsappEnabled": bool(c_row["whatsapp_enabled"]) if ("whatsapp_enabled" in c_row.keys() and c_row["whatsapp_enabled"] is not None) else False,
+        "whatsappApiUrl": (c_row["whatsapp_api_url"] if "whatsapp_api_url" in c_row.keys() else "") or "",
+        "whatsappApiKey": (c_row["whatsapp_api_key"] if "whatsapp_api_key" in c_row.keys() else "") or "",
+        "whatsappInstance": (c_row["whatsapp_instance"] if "whatsapp_instance" in c_row.keys() else "") or "",
+        "whatsappNotifyTech": bool(c_row["whatsapp_notify_tech"]) if ("whatsapp_notify_tech" in c_row.keys() and c_row["whatsapp_notify_tech"] is not None) else True,
+        "whatsappNotifyUser": bool(c_row["whatsapp_notify_user"]) if ("whatsapp_notify_user" in c_row.keys() and c_row["whatsapp_notify_user"] is not None) else True,
+        "whatsappNotifyAdmin": bool(c_row["whatsapp_notify_admin"]) if ("whatsapp_notify_admin" in c_row.keys() and c_row["whatsapp_notify_admin"] is not None) else True
     }
 
     cur.execute("SELECT * FROM clients ORDER BY created_at DESC;")
@@ -492,6 +512,245 @@ def fetch_full_state():
         "tickets": tickets,
         "solutions": solutions
     }
+
+
+def normalize_phone_whatsapp(phone_str):
+    """Higieniza número de telefone e adiciona código 55 do Brasil se necessário."""
+    if not phone_str:
+        return ""
+    digits = re.sub(r"\D", "", str(phone_str))
+    if not digits:
+        return ""
+    # Se tem 10 ou 11 dígitos (DDD + número), prefixa com 55 (Brasil)
+    if len(digits) in (10, 11):
+        digits = "55" + digits
+    return digits
+
+
+def send_whatsapp_raw(api_url, api_key, instance, phone, message):
+    """
+    Envia mensagem via HTTP para a API de WhatsApp (suporta Evolution API, Z-API ou Webhook genérico).
+    """
+    phone_clean = normalize_phone_whatsapp(phone)
+    if not phone_clean or not api_url or not message:
+        return False, "Número ou URL não informada"
+
+    base_url = api_url.rstrip("/")
+
+    # Monta URL e Headers conforme o formato especificado
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "User-Agent": "ServiceDeskPro-WhatsApp/1.0"
+    }
+    if api_key:
+        headers["apikey"] = api_key
+        headers["Authorization"] = f"Bearer {api_key}"
+        headers["Client-Token"] = api_key
+
+    # Se a URL não apontar para endpoint final, infere o padrão Evolution API
+    target_url = base_url
+    if not any(k in base_url for k in ["/message/sendText", "/send-message", "/send-text", "/webhook"]):
+        inst_slug = instance or "default"
+        target_url = f"{base_url}/message/sendText/{inst_slug}"
+
+    payload_data = {
+        "number": phone_clean,
+        "phone": phone_clean,
+        "to": phone_clean,
+        "text": message,
+        "message": message,
+        "textMessage": {"text": message}
+    }
+
+    try:
+        req = urllib.request.Request(
+            target_url,
+            data=json.dumps(payload_data).encode("utf-8"),
+            headers=headers,
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            resp_code = resp.getcode()
+            return True, f"HTTP {resp_code}"
+    except Exception as exc:
+        print(f"[WhatsApp] Falha ao enviar para {phone_clean} em {target_url}: {exc}")
+        return False, str(exc)
+
+
+def trigger_whatsapp_event_async(event_type, ticket_info):
+    """Dispara notificações de WhatsApp em segundo plano sem travar a requisição do usuário."""
+    t = threading.Thread(
+        target=_process_whatsapp_notifications,
+        args=(event_type, ticket_info),
+        daemon=True
+    )
+    t.start()
+
+
+def _process_whatsapp_notifications(event_type, ticket_info):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM contract WHERE id = 1;")
+        c_row = cur.fetchone()
+        if not c_row:
+            conn.close()
+            return
+
+        enabled = bool(c_row["whatsapp_enabled"]) if "whatsapp_enabled" in c_row.keys() and c_row["whatsapp_enabled"] is not None else False
+        if not enabled:
+            conn.close()
+            return
+
+        api_url = (c_row["whatsapp_api_url"] if "whatsapp_api_url" in c_row.keys() else "") or ""
+        api_key = (c_row["whatsapp_api_key"] if "whatsapp_api_key" in c_row.keys() else "") or ""
+        instance = (c_row["whatsapp_instance"] if "whatsapp_instance" in c_row.keys() else "") or ""
+        notify_tech = bool(c_row["whatsapp_notify_tech"]) if "whatsapp_notify_tech" in c_row.keys() and c_row["whatsapp_notify_tech"] is not None else True
+        notify_user = bool(c_row["whatsapp_notify_user"]) if "whatsapp_notify_user" in c_row.keys() and c_row["whatsapp_notify_user"] is not None else True
+        notify_admin = bool(c_row["whatsapp_notify_admin"]) if "whatsapp_notify_admin" in c_row.keys() and c_row["whatsapp_notify_admin"] is not None else True
+        admin_phone = (c_row["admin_phone"] if "admin_phone" in c_row.keys() else "") or ""
+        company = c_row["company_name"] or "ServiceDesk Pro"
+
+        tid = ticket_info.get("id") or ""
+        title = ticket_info.get("title") or ""
+        status = ticket_info.get("status") or "Aberto"
+        technician = ticket_info.get("technician") or ""
+        user_id = ticket_info.get("userId") or ""
+        priority = ticket_info.get("priority") or "Média"
+        problem_found = ticket_info.get("problemFound") or ""
+        service_perf = ticket_info.get("servicePerformed") or ""
+
+        # Busca dados do solicitante
+        user_phone = ""
+        user_name = "Solicitante"
+        if user_id:
+            cur.execute("SELECT name, phone FROM users WHERE id = ?;", (user_id,))
+            u_row = cur.fetchone()
+            if u_row:
+                user_name = u_row["name"] or "Solicitante"
+                user_phone = u_row["phone"] or ""
+
+        # Busca telefone do técnico designado
+        tech_phone = ""
+        if technician and technician.lower() not in ("", "aguardando direcionamento (admin)", "aguardando atribuição", "não atribuído", "fila técnica geral"):
+            cur.execute("SELECT phone FROM users WHERE LOWER(name) = LOWER(?);", (technician,))
+            t_row = cur.fetchone()
+            if t_row and t_row["phone"]:
+                tech_phone = t_row["phone"]
+            else:
+                cur.execute("SELECT phone FROM users WHERE LOWER(name) LIKE ?;", (f"%{technician.lower()}%",))
+                t_row2 = cur.fetchone()
+                if t_row2 and t_row2["phone"]:
+                    tech_phone = t_row2["phone"]
+
+        conn.close()
+
+        # Montagem e envio das mensagens por tipo de evento
+        if event_type == "NEW_TICKET":
+            # 1. Avisa o Administrador
+            if notify_admin and admin_phone:
+                msg_admin = (
+                    f"🔔 *NOVO CHAMADO ABERTO — {company}*\n\n"
+                    f"📌 *Protocolo:* {tid}\n"
+                    f"📝 *Título:* {title}\n"
+                    f"👤 *Solicitante:* {user_name}\n"
+                    f"⚡ *Prioridade:* {priority}\n\n"
+                    f"Acesse o painel para triagem e direcionamento."
+                )
+                send_whatsapp_raw(api_url, api_key, instance, admin_phone, msg_admin)
+
+            # 2. Confirmação ao Solicitante
+            if notify_user and user_phone:
+                msg_user = (
+                    f"✅ *CHAMADO REGISTRADO COM SUCESSO — {company}*\n\n"
+                    f"Olá, *{user_name}*! Seu chamado foi recebido pela nossa equipe de suporte:\n\n"
+                    f"📌 *Protocolo:* {tid}\n"
+                    f"📝 *Assunto:* {title}\n"
+                    f"⏳ *Status:* Aberto (Aguardando Atendimento)\n\n"
+                    f"Você receberá atualizações automáticas por aqui."
+                )
+                send_whatsapp_raw(api_url, api_key, instance, user_phone, msg_user)
+
+            # 3. Se já abriu direcionado para um técnico
+            if notify_tech and tech_phone:
+                msg_tech = (
+                    f"👨‍🔧 *NOVO CHAMADO DIRECIONADO A VOCÊ — {company}*\n\n"
+                    f"Olá, *{technician}*! Um novo chamado foi atribuído a você:\n\n"
+                    f"📌 *Protocolo:* {tid}\n"
+                    f"📝 *Título:* {title}\n"
+                    f"👤 *Solicitante:* {user_name}\n"
+                    f"⚡ *Prioridade:* {priority}\n\n"
+                    f"Acesse o sistema para dar o aceite e iniciar o atendimento."
+                )
+                send_whatsapp_raw(api_url, api_key, instance, tech_phone, msg_tech)
+
+        elif event_type == "ASSIGNED_TECH":
+            # 1. Alerta ao Técnico
+            if notify_tech and tech_phone:
+                msg_tech = (
+                    f"👨‍🔧 *CHAMADO DIRECIONADO — {company}*\n\n"
+                    f"Olá, *{technician}*! O chamado *{tid}* foi direcionado a você:\n\n"
+                    f"📝 *Título:* {title}\n"
+                    f"👤 *Solicitante:* {user_name}\n"
+                    f"⚡ *Prioridade:* {priority}\n\n"
+                    f"👉 Acesse o ServiceDesk para aceitar e iniciar o atendimento."
+                )
+                send_whatsapp_raw(api_url, api_key, instance, tech_phone, msg_tech)
+
+            # 2. Notifica o Solicitante que o chamado foi direcionado
+            if notify_user and user_phone:
+                msg_user = (
+                    f"👨‍💻 *SEU CHAMADO FOI DIRECIONADO — {company}*\n\n"
+                    f"Olá, *{user_name}*! O chamado *{tid}* ({title}) foi atribuído ao técnico:\n\n"
+                    f"👨‍🔧 *Técnico Responsável:* {technician}\n"
+                    f"⏳ *Status:* Aberto (Aguardando Aceite do Técnico)\n\n"
+                    f"Logo o atendimento será iniciado."
+                )
+                send_whatsapp_raw(api_url, api_key, instance, user_phone, msg_user)
+
+        elif event_type == "TICKET_STARTED":
+            # Avisa o Solicitante que o técnico deu início ao atendimento
+            if notify_user and user_phone:
+                msg_user = (
+                    f"▶️ *ATENDIMENTO INICIADO — {company}*\n\n"
+                    f"Olá, *{user_name}*! O técnico *{technician}* deu início ao atendimento do seu chamado:\n\n"
+                    f"📌 *Protocolo:* {tid}\n"
+                    f"📝 *Assunto:* {title}\n"
+                    f"🚀 *Status:* Em Atendimento\n\n"
+                    f"Nossa equipe está cuidando da sua solicitação!"
+                )
+                send_whatsapp_raw(api_url, api_key, instance, user_phone, msg_user)
+
+        elif event_type == "TICKET_RESOLVED":
+            # 1. Avisa o Solicitante da conclusão com laudo do serviço
+            if notify_user and user_phone:
+                laudo_texto = f"\n🛠️ *Serviço Realizado:* {service_perf}" if service_perf else ""
+                diag_texto = f"\n🔍 *Diagnóstico:* {problem_found}" if problem_found else ""
+                msg_user = (
+                    f"🎉 *CHAMADO CONCLUÍDO COM SUCESSO — {company}*\n\n"
+                    f"Olá, *{user_name}*! Seu chamado foi finalizado:\n\n"
+                    f"📌 *Protocolo:* {tid}\n"
+                    f"📝 *Assunto:* {title}\n"
+                    f"👨‍🔧 *Atendido por:* {technician or 'Equipe Técnica'}\n"
+                    f"✅ *Status:* Resolvido / Finalizado{diag_texto}{laudo_texto}\n\n"
+                    f"Agradecemos o contato!"
+                )
+                send_whatsapp_raw(api_url, api_key, instance, user_phone, msg_user)
+
+            # 2. Avisa o Administrador
+            if notify_admin and admin_phone:
+                hours = ticket_info.get("hoursSpent", 0)
+                msg_admin = (
+                    f"✅ *CHAMADO FINALIZADO — {company}*\n\n"
+                    f"📌 *Protocolo:* {tid} ({title})\n"
+                    f"👤 *Solicitante:* {user_name}\n"
+                    f"👨‍🔧 *Técnico:* {technician}\n"
+                    f"⏱️ *Horas Apontadas:* {hours}h"
+                )
+                send_whatsapp_raw(api_url, api_key, instance, admin_phone, msg_admin)
+
+    except Exception as e:
+        print(f"[WhatsApp] Erro interno no worker assíncrono: {e}")
 
 
 class AppRequestHandler(SimpleHTTPRequestHandler):
@@ -626,7 +885,15 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                         business_days = ?,
                         lunch_break_enabled = ?,
                         lunch_start = ?,
-                        lunch_end = ?
+                        lunch_end = ?,
+                        admin_phone = ?,
+                        whatsapp_enabled = ?,
+                        whatsapp_api_url = ?,
+                        whatsapp_api_key = ?,
+                        whatsapp_instance = ?,
+                        whatsapp_notify_tech = ?,
+                        whatsapp_notify_user = ?,
+                        whatsapp_notify_admin = ?
                     WHERE id = 1;
                 """, (
                     body.get("clientName", curr["client_name"]),
@@ -646,12 +913,51 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     (body.get("businessDays") if "businessDays" in body else (curr["business_days"] if "business_days" in curr.keys() else "1,2,3,4,5")) or "1,2,3,4,5",
                     1 if (body.get("lunchBreakEnabled", True) in (True, 1, "1", "true")) else 0,
                     (body.get("lunchStart") if "lunchStart" in body else (curr["lunch_start"] if "lunch_start" in curr.keys() else "12:00")) or "12:00",
-                    (body.get("lunchEnd") if "lunchEnd" in body else (curr["lunch_end"] if "lunch_end" in curr.keys() else "13:00")) or "13:00"
+                    (body.get("lunchEnd") if "lunchEnd" in body else (curr["lunch_end"] if "lunch_end" in curr.keys() else "13:00")) or "13:00",
+                    (body.get("adminPhone") if "adminPhone" in body else (curr["admin_phone"] if "admin_phone" in curr.keys() else "")) or "",
+                    1 if (body.get("whatsappEnabled", False) in (True, 1, "1", "true")) else 0,
+                    (body.get("whatsappApiUrl") if "whatsappApiUrl" in body else (curr["whatsapp_api_url"] if "whatsapp_api_url" in curr.keys() else "")) or "",
+                    (body.get("whatsappApiKey") if "whatsappApiKey" in body else (curr["whatsapp_api_key"] if "whatsapp_api_key" in curr.keys() else "")) or "",
+                    (body.get("whatsappInstance") if "whatsappInstance" in body else (curr["whatsapp_instance"] if "whatsapp_instance" in curr.keys() else "")) or "",
+                    1 if (body.get("whatsappNotifyTech", True) in (True, 1, "1", "true")) else 0,
+                    1 if (body.get("whatsappNotifyUser", True) in (True, 1, "1", "true")) else 0,
+                    1 if (body.get("whatsappNotifyAdmin", True) in (True, 1, "1", "true")) else 0
                 ))
                 if body.get("adminPassword"):
                     cur.execute("UPDATE contract SET admin_password = ? WHERE id = 1;", (body["adminPassword"],))
                 conn.commit()
                 self._send_json({"ok": True, "state": fetch_full_state()})
+                return
+
+            # 2A. TESTAR DISPARO DE MENSAGEM WHATSAPP
+            if parsed.path == "/api/whatsapp/test":
+                cur.execute("SELECT * FROM contract WHERE id = 1;")
+                contract_row = cur.fetchone()
+                
+                target_phone = (body.get("phone") or (contract_row["admin_phone"] if contract_row and "admin_phone" in contract_row.keys() else "") or "").strip()
+                api_url = (body.get("apiUrl") or (contract_row["whatsapp_api_url"] if contract_row and "whatsapp_api_url" in contract_row.keys() else "") or "").strip()
+                api_key = (body.get("apiKey") or (contract_row["whatsapp_api_key"] if contract_row and "whatsapp_api_key" in contract_row.keys() else "") or "").strip()
+                instance = (body.get("instance") or (contract_row["whatsapp_instance"] if contract_row and "whatsapp_instance" in contract_row.keys() else "") or "").strip()
+                
+                if not target_phone:
+                    self._send_json({"ok": False, "error": "Informe o número de WhatsApp de destino (com DDD)."}, status=400)
+                    return
+                if not api_url:
+                    self._send_json({"ok": False, "error": "Informe a URL da API do WhatsApp."}, status=400)
+                    return
+                
+                test_msg = (
+                    "🔔 *ServiceDesk Pro - Teste de Notificação*\n\n"
+                    "Olá! Este é um disparo de teste do seu sistema de chamados técnicos.\n"
+                    "A integração com o WhatsApp está operando normalmente! ✅\n\n"
+                    f"⏰ Disparado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+                )
+                
+                ok, status_msg = send_whatsapp_raw(api_url, api_key, instance, target_phone, test_msg)
+                if ok:
+                    self._send_json({"ok": True, "message": f"Mensagem enviada com sucesso para {target_phone} ({status_msg})!"})
+                else:
+                    self._send_json({"ok": False, "error": f"Erro no envio para {target_phone}: {status_msg}"}, status=502)
                 return
 
             # 2B. CADASTRAR NOVO CLIENTE DE CONTRATO FIXO (MÚLTIPLOS CLIENTES)
@@ -1064,6 +1370,17 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                     due_dt_str
                 ))
                 conn.commit()
+
+                # Disparo automático via WhatsApp
+                trigger_whatsapp_event_async("NEW_TICKET", {
+                    "id": tid,
+                    "title": body["title"].strip(),
+                    "userId": body["userId"],
+                    "priority": body.get("priority", "Média"),
+                    "technician": tech_val,
+                    "status": "Aberto"
+                })
+
                 self._send_json({"ok": True, "ticketId": tid, "state": fetch_full_state()})
                 return
 
@@ -1253,6 +1570,39 @@ class AppRequestHandler(SimpleHTTPRequestHandler):
                         ))
 
                 conn.commit()
+
+                # Notificações automáticas via WhatsApp (Direcionamento, Aceite e Resolução)
+                if new_tech != row["technician"] and (new_tech or "").lower().strip() not in ("", "aguardando direcionamento (admin)", "aguardando atribuição", "não atribuído", "fila técnica geral"):
+                    trigger_whatsapp_event_async("ASSIGNED_TECH", {
+                        "id": tid,
+                        "title": new_title,
+                        "userId": new_user_id,
+                        "priority": new_priority,
+                        "technician": new_tech,
+                        "status": new_status
+                    })
+                elif new_status == "Em Atendimento" and row["status"] != "Em Atendimento":
+                    trigger_whatsapp_event_async("TICKET_STARTED", {
+                        "id": tid,
+                        "title": new_title,
+                        "userId": new_user_id,
+                        "priority": new_priority,
+                        "technician": new_tech,
+                        "status": new_status
+                    })
+                elif new_status == "Resolvido" and row["status"] != "Resolvido":
+                    trigger_whatsapp_event_async("TICKET_RESOLVED", {
+                        "id": tid,
+                        "title": new_title,
+                        "userId": new_user_id,
+                        "priority": new_priority,
+                        "technician": new_tech,
+                        "status": new_status,
+                        "hoursSpent": new_hours,
+                        "problemFound": new_prob_found,
+                        "servicePerformed": new_serv_perf
+                    })
+
                 self._send_json({"ok": True, "state": fetch_full_state()})
                 return
 

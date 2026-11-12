@@ -1,14 +1,25 @@
 # 🛠️ ServiceDesk Pro — Sistema de Chamados Técnicos, SLA & Banco de Soluções
 
-![Versão](https://img.shields.io/badge/versão-v2.0.0-4f46e5)
+![Versão](https://img.shields.io/badge/versão-v2.1.0-4f46e5)
 ![Backend](https://img.shields.io/badge/Python_3-SQLite_WAL-10b981)
+![WhatsApp](https://img.shields.io/badge/WhatsApp-Notificações_Automáticas-25D366)
 ![Licença](https://img.shields.io/badge/uso-Corporativo_/_Contratos_Fixos-f59e0b)
 
-Sistema web completo de **Gestão de Chamados Técnicos (Help Desk / Service Desk)**, **Inventário de Equipamentos & Ativos de TI com Deduplicação**, **Controle de SLA em Horário de Expediente & Pausa de Almoço**, **Correlação Automática de Soluções**, **Gestão de Múltiplos Clientes de Contrato Fixo**, **Aceite e Histórico de Início de Atendimento** e **Banco de Soluções com Documentação em PDF**.
+Sistema web completo de **Gestão de Chamados Técnicos (Help Desk / Service Desk)**, **Notificações Automáticas no WhatsApp para Celular de Técnicos, Clientes e Admin**, **Inventário de Equipamentos & Ativos de TI com Deduplicação**, **Controle de SLA em Horário de Expediente & Pausa de Almoço**, **Correlação Automática de Soluções**, **Gestão de Múltiplos Clientes de Contrato Fixo**, **Aceite e Histórico de Início de Atendimento** e **Banco de Soluções com Documentação em PDF**.
 
 ---
 
 ## ✨ Principais Funcionalidades
+
+### 1. Notificações Automáticas via WhatsApp (Celular de Técnico, Solicitante e Admin)
+- **Disparos em Tempo Real no Celular**: Mantém todos informados instantaneamente via WhatsApp sem precisar recarregar o sistema ou verificar e-mails:
+  - **Técnico**: Recebe mensagem instantânea assim que um chamado for atribuído/direcionado a ele, contendo número do protocolo, cliente, solicitante, prioridade, equipamento e link direto para aceite.
+  - **Solicitante / Cliente**: Recebe confirmação com protocolo na abertura do chamado, notificação quando o técnico inicia o atendimento presencial/remoto e laudo técnico detalhado no fechamento (problema encontrado + solução aplicada).
+  - **Administrador**: Notificado a cada novo chamado aberto na Central de Triagem para rápida distribuição e monitoramento.
+- **Suporte Multi-Gateway**: Compatível com qualquer servidor WhatsApp Gateway HTTP (Evolution API, Z-API, Baileys ou Webhook próprio).
+- **Formatação Inteligente de Telefones**: Normalização automática de números com ou sem nono dígito e inclusão automática de DDI (`+55`).
+- **Disparos em Segundo Plano (Non-Blocking)**: Execução assíncrona multithreaded no backend (`server.py`), garantindo resposta instantânea na interface gráfica.
+- **Painel de Configurações & Teste de Disparo**: Ativação por chaves toggle, customização de URL da API, token e botão **"Testar Disparo no Celular"** para validação imediata.
 
 ### 1. Inventário de Equipamentos & Gestão de Ativos de TI
 - **Catálogo Completo de Ativos**: Cadastro e gestão de Desktops, Notebooks, Servidores, Impressoras, Equipamentos de Rede (Switches/Roteadores), Nobreaks e Monitores.
@@ -124,6 +135,7 @@ cd /opt/chamado-tecnico && git pull origin main && sudo bash configurar-dominio.
 
 | Versão | Data | Descrição das Entregas |
 | :--- | :--- | :--- |
+| **`v2.1.0`** | Nov/2026 | **Notificações Automáticas no WhatsApp para Celular de Técnicos, Solicitantes e Admin**: Disparos de mensagens instantâneas via WhatsApp em tempo real sem travar a interface (threads assíncronas em segundo plano); notificação para o Técnico com detalhes do chamado ao ser designado; notificação para o Solicitante na abertura com protocolo, início e conclusão com laudo técnico; notificação para o Admin a cada novo chamado; painel de configuração da API/Webhook, instância, chave e botão interativo de teste de disparo. |
 | **`v2.0.0`** | Nov/2026 | **Modo Escuro Completo (Dark Mode)**: Alternância em 1 clique entre Modo Escuro (`🌙`) e Modo Claro (`☀️`) na barra superior, na tela de login e na aba *Configurações & Perfil*; paleta escura de alto contraste para tabelas, modais, formulários, cards e badges; persistência automática da preferência do usuário e compatibilidade total com os 7 temas de cores. |
 | **`v1.9.0`** | Nov/2026 | **Pausa de Almoço no SLA & Jornada Líquida Diária**: Configuração de intervalo de almoço técnico (ex: 12:00 às 13:00) com congelamento do cronômetro de SLA durante o almoço; novo controle toggle na aba Configurações & Contrato; badges informativos em tempo real no topo e nos chamados; cálculo automático de jornada útil líquida diária; prevenção contra estouro de chamados abertos antes ou durante o almoço. |
 | **`v1.8.1`** | Nov/2026 | **Correção de Carregamento do Inventário, Painel Interativo de Expediente & SLA Noturno**: Correção crítica de sintaxe que impedia abertura do modal de equipamentos e navegação; painel interativo de horários com 4 presets (Comercial, Flex, Estendido, Plantão 24/7); seletores toggle de dias da semana (Seg a Dom); simulador interativo de abertura fora do expediente garantindo que chamados abertos à noite não estourem o SLA; indicador em tempo real de status do suporte no topo; atalho para o inventário dentro do novo chamado. |

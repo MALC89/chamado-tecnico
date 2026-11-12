@@ -3927,6 +3927,28 @@ function loadSettingsForms() {
 
   toggleLunchBreakFields();
   updateBusinessHoursCalculations();
+
+  // Campos de Integração WhatsApp
+  const waEnabledInput = document.getElementById('cfg-wa-enabled');
+  const waUrlInput = document.getElementById('cfg-wa-url');
+  const waInstanceInput = document.getElementById('cfg-wa-instance');
+  const waKeyInput = document.getElementById('cfg-wa-key');
+  const waAdminPhoneInput = document.getElementById('cfg-wa-admin-phone');
+  const waNotifyTechInput = document.getElementById('cfg-wa-notify-tech');
+  const waNotifyUserInput = document.getElementById('cfg-wa-notify-user');
+  const waNotifyAdminInput = document.getElementById('cfg-wa-notify-admin');
+
+  if (waEnabledInput) waEnabledInput.checked = (c.whatsappEnabled === true || c.whatsappEnabled === 1 || c.whatsappEnabled === '1');
+  if (waUrlInput) waUrlInput.value = c.whatsappApiUrl || '';
+  if (waInstanceInput) waInstanceInput.value = c.whatsappInstance || '';
+  if (waKeyInput) waKeyInput.value = c.whatsappApiKey || '';
+  if (waAdminPhoneInput) waAdminPhoneInput.value = c.adminPhone || '';
+  if (waNotifyTechInput) waNotifyTechInput.checked = (c.whatsappNotifyTech !== false && c.whatsappNotifyTech !== 0 && c.whatsappNotifyTech !== '0');
+  if (waNotifyUserInput) waNotifyUserInput.checked = (c.whatsappNotifyUser !== false && c.whatsappNotifyUser !== 0 && c.whatsappNotifyUser !== '0');
+  if (waNotifyAdminInput) waNotifyAdminInput.checked = (c.whatsappNotifyAdmin !== false && c.whatsappNotifyAdmin !== 0 && c.whatsappNotifyAdmin !== '0');
+
+  toggleWhatsAppConfigFields();
+
   renderClientsList();
 }
 
@@ -4145,6 +4167,121 @@ async function handleSaveBusinessHours(e) {
     showToast('Regras de horário de expediente, pausa de almoço e SLA atualizadas com sucesso!');
   } catch (err) {
     showToast(err.message || 'Erro ao salvar horário de atendimento.', 'error');
+  }
+}
+
+function toggleWhatsAppConfigFields() {
+  const enabled = document.getElementById('cfg-wa-enabled')?.checked;
+  const fields = document.getElementById('cfg-wa-fields');
+  const badge = document.getElementById('whatsapp-status-badge');
+  const badgeText = document.getElementById('whatsapp-badge-text');
+
+  if (fields) {
+    if (enabled) {
+      fields.classList.remove('opacity-40', 'pointer-events-none');
+    } else {
+      fields.classList.add('opacity-40', 'pointer-events-none');
+    }
+  }
+
+  if (badge && badgeText) {
+    if (enabled) {
+      badge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1.5';
+      badgeText.textContent = 'WhatsApp Ativo';
+      const dot = badge.querySelector('span:first-child');
+      if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+    } else {
+      badge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1.5';
+      badgeText.textContent = 'WhatsApp Inativo';
+      const dot = badge.querySelector('span:first-child');
+      if (dot) dot.className = 'w-2 h-2 rounded-full bg-slate-400';
+    }
+  }
+}
+
+async function handleSaveWhatsAppConfig(e) {
+  if (e && e.preventDefault) e.preventDefault();
+
+  const enabled = document.getElementById('cfg-wa-enabled')?.checked ?? false;
+  const apiUrl = document.getElementById('cfg-wa-url')?.value.trim() || '';
+  const instance = document.getElementById('cfg-wa-instance')?.value.trim() || '';
+  const apiKey = document.getElementById('cfg-wa-key')?.value.trim() || '';
+  const adminPhone = document.getElementById('cfg-wa-admin-phone')?.value.trim() || '';
+  const notifyTech = document.getElementById('cfg-wa-notify-tech')?.checked ?? true;
+  const notifyUser = document.getElementById('cfg-wa-notify-user')?.checked ?? true;
+  const notifyAdmin = document.getElementById('cfg-wa-notify-admin')?.checked ?? true;
+
+  try {
+    await window.db.updateContract({
+      whatsappEnabled: enabled,
+      whatsappApiUrl: apiUrl,
+      whatsappInstance: instance,
+      whatsappApiKey: apiKey,
+      adminPhone: adminPhone,
+      whatsappNotifyTech: notifyTech,
+      whatsappNotifyUser: notifyUser,
+      whatsappNotifyAdmin: notifyAdmin
+    });
+    refreshAllViews();
+    showToast('Configurações de integração com o WhatsApp salvas com sucesso!');
+  } catch (err) {
+    showToast(err.message || 'Erro ao salvar configurações do WhatsApp.', 'error');
+  }
+}
+
+async function testWhatsAppConnection() {
+  const btn = document.getElementById('btn-test-whatsapp');
+  const originalHtml = btn ? btn.innerHTML : '';
+
+  const apiUrl = document.getElementById('cfg-wa-url')?.value.trim() || '';
+  const instance = document.getElementById('cfg-wa-instance')?.value.trim() || '';
+  const apiKey = document.getElementById('cfg-wa-key')?.value.trim() || '';
+  const currentAdminPhone = document.getElementById('cfg-wa-admin-phone')?.value.trim() || '';
+
+  if (!apiUrl) {
+    showToast('Por favor, informe primeiro a URL da API do WhatsApp.', 'error');
+    const input = document.getElementById('cfg-wa-url');
+    if (input) input.focus();
+    return;
+  }
+
+  const phonePrompt = prompt('Informe o número de WhatsApp com DDD para receber a mensagem de teste (ex: 11999990000):', currentAdminPhone);
+  if (!phonePrompt || !phonePrompt.trim()) {
+    return;
+  }
+  const targetPhone = phonePrompt.trim();
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="inline-block animate-spin mr-1">⌛</span><span>Enviando...</span>';
+    }
+
+    const res = await fetch('/api/whatsapp/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: targetPhone,
+        apiUrl: apiUrl,
+        apiKey: apiKey,
+        instance: instance
+      })
+    });
+
+    const data = await res.json();
+    if (data.ok) {
+      showToast(data.message || `Mensagem de teste enviada com sucesso para ${targetPhone}!`);
+    } else {
+      showToast(data.error || 'Falha no envio da mensagem de teste.', 'error');
+    }
+  } catch (err) {
+    showToast(`Erro de comunicação com o servidor: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      if (window.lucide) lucide.createIcons();
+    }
   }
 }
 
@@ -5126,6 +5263,9 @@ window.toggleNewTicketEquipMode = toggleNewTicketEquipMode;
 window.toggleLunchBreakFields = toggleLunchBreakFields;
 window.toggleDarkMode = toggleDarkMode;
 window.setDarkMode = setDarkMode;
+window.toggleWhatsAppConfigFields = toggleWhatsAppConfigFields;
+window.handleSaveWhatsAppConfig = handleSaveWhatsAppConfig;
+window.testWhatsAppConnection = testWhatsAppConnection;
 
 // ==========================================
 // UTILITÁRIOS
